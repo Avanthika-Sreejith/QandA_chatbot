@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.git/
+.gitignore
+.qdrant/
+qdrant_storage/
+outputs/
+work/uploads/
+*.log
+*.env
+.vscode/

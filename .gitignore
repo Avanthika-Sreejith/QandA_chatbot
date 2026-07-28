@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+qdrant_storage/
+.pytest_cache/
+.streamlit/
+work/uploads/
+work/chat_history.json

@@ -1,0 +1,19 @@
+# Day 1: Qdrant connectivity
+qdrant-client>=1.12,<2.0
+python-dotenv>=1.0,<2.0
+
+# Days 2-7: parsing, chunking, embeddings, retrieval
+pymupdf>=1.24,<2.0
+python-docx>=1.1,<2.0
+openpyxl>=3.1,<4.0
+chonkie>=1.0,<2.0
+fastembed>=0.4,<1.0
+sentence-transformers>=5.0,<6.0
+
+# Week 2-3: answering and API/UI
+groq>=0.11,<1.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+python-multipart>=0.0.18,<1.0
+streamlit>=1.40,<2.0
+supabase>=2.0,<3.0

@@ -28,4 +28,4 @@ RUN python preload_models.py
 COPY . .
 
 EXPOSE 8501
-CMD ["streamlit", "run", "app/streamlit_app.py", "--server.fileWatcherType", "none"]
+CMD ["sh", "-c", "streamlit run app/streamlit_app.py --server.address 0.0.0.0 --server.port ${PORT:-8501} --server.headless true --server.fileWatcherType none"]

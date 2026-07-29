@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from concurrent.futures import Future
 from datetime import datetime
-from threading import Thread
 from typing import Any
 from uuid import uuid4
 
 import streamlit as st
-from qdrant_client.models import FieldCondition, Filter, MatchValue
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -27,6 +25,7 @@ from app.database import (
     get_messages,
     append_message,
     clear_messages,
+    delete_chat,
 )
 
 
@@ -75,26 +74,25 @@ def get_chat_files(document_chat_id: str) -> list[str]:
         return []
 
 
-@st.cache_resource(show_spinner=False)
-def begin_model_preload() -> Future[None]:
-    """Warm indexing models in the background after the app process starts."""
-    completion: Future[None] = Future()
-
-    def preload() -> None:
-        try:
-            from app.ingestion.indexing import get_embedding_models
-
-            get_embedding_models()
-        except Exception as error:
-            completion.set_exception(error)
-        else:
-            completion.set_result(None)
-
-    Thread(target=preload, name="embedding-model-preload", daemon=True).start()
-    return completion
-
-
-model_preload = begin_model_preload()
+def delete_chat_documents(document_chat_id: str) -> None:
+    """Permanently remove all indexed chunks belonging to one document chat."""
+    client = get_client()
+    if not client.collection_exists(QDRANT_COLLECTION):
+        return
+    client.delete(
+        collection_name=QDRANT_COLLECTION,
+        points_selector=FilterSelector(
+            filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_chat_id",
+                        match=MatchValue(value=document_chat_id),
+                    )
+                ]
+            )
+        ),
+        wait=True,
+    )
 
 
 UPLOAD_DIRECTORY = Path("work/uploads")
@@ -115,27 +113,20 @@ def new_chat_name() -> str:
     return f"Document chat — {datetime.now().strftime('%d %b %Y, %H:%M')}"
 
 
+def has_default_chat_name(chat_name: str) -> bool:
+    """Return whether a chat has not yet received a meaningful user title."""
+    return chat_name.startswith("Document chat —")
+
+
+def title_for_uploads(uploads: list[Any]) -> str:
+    """Create a useful first title from the selected upload names."""
+    first_name = Path(uploads[0].name).stem
+    return first_name if len(uploads) == 1 else f"{first_name} + {len(uploads) - 1} more"
+
+
 def main() -> None:
     st.title("Document Q&A — V1")
     st.write("Add documents to the knowledge base before asking questions.")
-
-    # Do not show upload controls until the indexing models are fully ready.
-    # This prevents an upload from appearing to start while model warm-up is pending.
-    if not model_preload.done():
-        with st.spinner("Starting the document engine: loading Qwen embeddings and BM25…"):
-            try:
-                model_preload.result()
-            except Exception as error:
-                st.error(f"Document engine failed to start: {error}")
-                return
-    else:
-        try:
-            model_preload.result()
-        except Exception as error:
-            st.error(f"Document engine failed to start: {error}")
-            return
-
-    st.success("Document engine is ready.")
 
     if "active_document_chat_id" not in st.session_state:
         st.session_state.active_document_chat_id = uuid4().hex
@@ -144,9 +135,12 @@ def main() -> None:
     saved_chats = get_document_chats()
     active_chat_id = st.session_state.active_document_chat_id
     active_chat_name = st.session_state.active_document_chat_name
-    chat_options = [active_chat_id, *(chat_id for chat_id in saved_chats if chat_id != active_chat_id)]
+    chat_options = [
+        (active_chat_id, active_chat_name),
+        *((chat_id, chat_name) for chat_id, chat_name in saved_chats.items() if chat_id != active_chat_id),
+    ]
     if st.session_state.get("document_chat_picker") not in chat_options:
-        st.session_state.document_chat_picker = active_chat_id
+        st.session_state.document_chat_picker = chat_options[0]
 
     def create_document_chat() -> None:
         """Start an empty chat and persist it to Supabase."""
@@ -156,25 +150,24 @@ def main() -> None:
         )
         st.session_state.active_document_chat_id = chat_id
         st.session_state.active_document_chat_name = chat_name
-        st.session_state.document_chat_picker = chat_id
+        st.session_state.document_chat_picker = (chat_id, chat_name)
         st.session_state.new_document_chat_name = ""
         upsert_chat(chat_id, chat_name)
         get_document_chats.clear()
 
     with st.sidebar:
         st.header("Document chats")
-        selected_chat_id = st.selectbox(
+        selected_chat = st.selectbox(
             "Current chat",
             options=chat_options,
-            format_func=lambda chat_id: (
-                active_chat_name if chat_id == active_chat_id else saved_chats[chat_id]
-            ),
+            format_func=lambda chat: chat[1],
             help="Queries search only the documents in the selected chat.",
             key="document_chat_picker",
         )
+        selected_chat_id, selected_chat_name = selected_chat
         if selected_chat_id != active_chat_id:
             st.session_state.active_document_chat_id = selected_chat_id
-            st.session_state.active_document_chat_name = saved_chats[selected_chat_id]
+            st.session_state.active_document_chat_name = selected_chat_name
             st.rerun()
 
         st.text_input(
@@ -183,6 +176,50 @@ def main() -> None:
             key="new_document_chat_name",
         )
         st.button("New document chat", use_container_width=True, on_click=create_document_chat)
+
+        renamed_chat = st.text_input(
+            "Rename current chat",
+            value=active_chat_name,
+            key=f"rename_chat_{active_chat_id}",
+        )
+        if st.button("Save chat name", use_container_width=True):
+            new_name = renamed_chat.strip()
+            if new_name:
+                st.session_state.active_document_chat_name = new_name
+                upsert_chat(active_chat_id, new_name)
+                get_document_chats.clear()
+                st.rerun()
+
+        with st.expander("Delete current chat"):
+            st.warning("This permanently removes this chat, its Q&A history, and all files indexed in it.")
+            confirmed = st.checkbox(
+                "I understand this cannot be undone",
+                key=f"confirm_delete_chat_{active_chat_id}",
+            )
+            if st.button(
+                "Delete this chat",
+                type="primary",
+                disabled=not confirmed,
+                use_container_width=True,
+            ):
+                try:
+                    delete_chat_documents(active_chat_id)
+                    delete_chat(active_chat_id)
+                    st.session_state.chat_history_by_document_chat = {
+                        chat_id: messages
+                        for chat_id, messages in st.session_state.get("chat_history_by_document_chat", {}).items()
+                        if chat_id != active_chat_id
+                    }
+                    new_id = uuid4().hex
+                    new_name = new_chat_name()
+                    st.session_state.active_document_chat_id = new_id
+                    st.session_state.active_document_chat_name = new_name
+                    st.session_state.document_chat_picker = (new_id, new_name)
+                    get_document_chats.clear()
+                    get_chat_files.clear()
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"Could not delete this chat: {error}")
 
         st.caption("Previous chats and their documents stay available until you delete them from Qdrant.")
 
@@ -202,29 +239,45 @@ def main() -> None:
         st.info("No files are indexed in this chat yet. Add files or a folder below.")
 
     st.subheader("Upload files")
+    if "upload_widget_version" not in st.session_state:
+        st.session_state.upload_widget_version = 0
     uploads = st.file_uploader(
         "Choose one or more documents",
         type=SUPPORTED_TYPES,
         accept_multiple_files=True,
         help="Supported: PDF, DOCX, XLSX, XLSM, and TXT. Scanned/image-only files are not supported in V1.",
+        key=f"upload_files_{st.session_state.upload_widget_version}",
     )
     if st.button("Index uploaded files", disabled=not uploads, use_container_width=True):
         try:
             from app.ingestion.indexing import ingest_files
 
+            progress = st.progress(0, text="Preparing uploaded files…")
+
+            def update_upload_progress(message: str, current: int, total: int) -> None:
+                fraction = current / total if total else 0
+                progress.progress(min(max(fraction, 0.0), 1.0), text=message)
+
+            if has_default_chat_name(active_chat_name):
+                active_chat_name = title_for_uploads(uploads)
+                st.session_state.active_document_chat_name = active_chat_name
+
             saved_paths = [save_upload(uploaded) for uploaded in uploads]
-            with st.spinner("Indexing your files…"):
-                total_segments, total_chunks = ingest_files(
-                    saved_paths,
-                    document_chat_id=active_chat_id,
-                    document_chat_name=active_chat_name,
-                )
+            total_segments, total_chunks = ingest_files(
+                saved_paths,
+                progress_callback=update_upload_progress,
+                document_chat_id=active_chat_id,
+                document_chat_name=active_chat_name,
+            )
+            progress.progress(1.0, text="Indexing complete")
             upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()
             message = f"Indexed {len(uploads)} file(s): {total_segments} segments and {total_chunks} chunks."
             st.success(message)
             st.session_state.last_indexed_info = message
+            st.session_state.upload_widget_version += 1
+            st.rerun()
         except Exception as error:
             st.error(f"Indexing failed: {error}")
 
@@ -239,12 +292,23 @@ def main() -> None:
         try:
             from app.ingestion.indexing import ingest_folder
 
-            with st.spinner("Indexing folder…"):
-                files, segments, chunks = ingest_folder(
-                    folder_path.strip(),
-                    document_chat_id=active_chat_id,
-                    document_chat_name=active_chat_name,
-                )
+            progress = st.progress(0, text="Preparing folder…")
+
+            def update_folder_progress(message: str, current: int, total: int) -> None:
+                fraction = current / total if total else 0
+                progress.progress(min(max(fraction, 0.0), 1.0), text=message)
+
+            if has_default_chat_name(active_chat_name):
+                active_chat_name = Path(folder_path.strip()).name or "Indexed folder"
+                st.session_state.active_document_chat_name = active_chat_name
+
+            files, segments, chunks = ingest_folder(
+                folder_path.strip(),
+                progress_callback=update_folder_progress,
+                document_chat_id=active_chat_id,
+                document_chat_name=active_chat_name,
+            )
+            progress.progress(1.0, text="Indexing complete")
             upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()

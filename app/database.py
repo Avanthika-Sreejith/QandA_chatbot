@@ -52,6 +52,12 @@ def get_all_chats() -> dict[str, str]:
         return {}
 
 
+def delete_chat(chat_id: str) -> None:
+    """Delete a chat and its messages (via the database cascade)."""
+    client = get_supabase_client()
+    client.table("document_chats").delete().eq("id", chat_id).execute()
+
+
 # ---------------------------------------------------------------------------
 # chat_messages table
 # ---------------------------------------------------------------------------

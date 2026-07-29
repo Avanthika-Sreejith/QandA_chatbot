@@ -6,7 +6,7 @@ from typing import Any
 
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-from app.embeddings import get_embedding_models
+from app.embeddings import get_dense_embeddings
 from app.retrieval.collection import DENSE_VECTOR_NAME, QDRANT_COLLECTION, get_client
 
 
@@ -17,8 +17,7 @@ def search_documents(
     document_chat_id: str | None = None,
 ) -> list[Any]:
     """Return the top-k semantic search results from Qdrant."""
-    dense_model, _ = get_embedding_models()
-    query_vector = dense_model.encode([query], normalize_embeddings=True, show_progress_bar=False)[0].tolist()
+    query_vector = get_dense_embeddings([query])[0]
 
     query_filter = None
     if document_chat_id:

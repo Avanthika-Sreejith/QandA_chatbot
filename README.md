@@ -1,3 +1,14 @@
+---
+title: Document Q&A Chatbot
+emoji: 📄
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+suggested_hardware: t4-small
+---
+
 # AI-Powered Document Q&A Chatbot
 
 An internship project for asking grounded questions across uploaded PDF, DOCX, XLSX, and TXT files. Version 1 excludes scanned and image-only documents.

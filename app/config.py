@@ -13,5 +13,6 @@ QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "document_chunks")
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
 DENSE_VECTOR_SIZE = 1024
-OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+JINA_EMBEDDING_MODEL = "jina-embeddings-v3"
+JINA_EMBEDDING_URL = "https://api.jina.ai/v1"
 SPARSE_EMBEDDING_MODEL = "Qdrant/bm25"

@@ -1,4 +1,4 @@
-"""Dense embeddings via OpenAI API, sparse embeddings via fastembed."""
+"""Dense embeddings via Jina AI API, sparse embeddings via fastembed."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from typing import Any
 from fastembed import SparseTextEmbedding
 from openai import OpenAI
 
-from app.config import DENSE_VECTOR_SIZE, OPENAI_EMBEDDING_MODEL, SPARSE_EMBEDDING_MODEL
+from app.config import DENSE_VECTOR_SIZE, JINA_EMBEDDING_MODEL, JINA_EMBEDDING_URL, SPARSE_EMBEDDING_MODEL
 
 
 def get_dense_embeddings(texts: list[str]) -> list[list[float]]:
-    """Embed a list of texts using OpenAI's embedding API."""
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    """Embed a list of texts using Jina AI's embedding API."""
+    client = OpenAI(api_key=os.getenv("JINA_API_KEY"), base_url=JINA_EMBEDDING_URL)
     response = client.embeddings.create(
-        model=OPENAI_EMBEDDING_MODEL,
+        model=JINA_EMBEDDING_MODEL,
         input=texts,
         dimensions=DENSE_VECTOR_SIZE,
     )

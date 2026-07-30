@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("path", help="Path to a PDF, DOCX, XLSX, XLSM, TXT file, or a folder")
     args = parser.parse_args()
 
-    print("Loading Qwen3 and BM25 models. The first run downloads the models and may take several minutes.")
+    print("Indexing document using OpenAI embeddings and BM25…")
     try:
         from pathlib import Path
 

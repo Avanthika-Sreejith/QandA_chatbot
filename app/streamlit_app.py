@@ -152,6 +152,7 @@ def main() -> None:
         st.session_state.active_document_chat_name = chat_name
         st.session_state.document_chat_picker = (chat_id, chat_name)
         st.session_state.new_document_chat_name = ""
+        st.session_state.last_indexed_info = None
         upsert_chat(chat_id, chat_name)
         get_document_chats.clear()
 
@@ -168,6 +169,7 @@ def main() -> None:
         if selected_chat_id != active_chat_id:
             st.session_state.active_document_chat_id = selected_chat_id
             st.session_state.active_document_chat_name = selected_chat_name
+            st.session_state.last_indexed_info = None
             st.rerun()
 
         st.text_input(
@@ -214,7 +216,7 @@ def main() -> None:
                     new_name = new_chat_name()
                     st.session_state.active_document_chat_id = new_id
                     st.session_state.active_document_chat_name = new_name
-                    st.session_state.document_chat_picker = (new_id, new_name)
+                    st.session_state.last_indexed_info = None
                     get_document_chats.clear()
                     get_chat_files.clear()
                     st.rerun()

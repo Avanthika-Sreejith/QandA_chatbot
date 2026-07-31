@@ -276,16 +276,15 @@ def main() -> None:
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:
-                st.warning(
+                notice = (
                     f"No text could be extracted from: {', '.join(skipped)}. "
-                    "These may be empty, scanned, or image-only, so they were not indexed."
+                    "These may be empty, scanned, or image-only, so they were not indexed.\n\n"
                 )
-            message = f"Indexed {len(uploads) - len(skipped)} file(s): {total_segments} segments and {total_chunks} chunks."
-            if total_chunks:
-                st.success(message)
             else:
-                st.error(f"Nothing was indexed. {message}")
+                notice = ""
+            message = f"{notice}Indexed {len(uploads) - len(skipped)} file(s): {total_segments} segments and {total_chunks} chunks."
             st.session_state.last_indexed_info = message
+            st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not total_chunks else "info")
             st.session_state.upload_widget_version += 1
             st.rerun()
         except Exception as error:
@@ -323,16 +322,15 @@ def main() -> None:
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:
-                st.warning(
+                notice = (
                     f"No text could be extracted from: {', '.join(skipped)}. "
-                    "These may be empty, scanned, or image-only, so they were not indexed."
+                    "These may be empty, scanned, or image-only, so they were not indexed.\n\n"
                 )
-            message = f"Indexed {files - len(skipped)} file(s): {segments} segments and {chunks} chunks."
-            if chunks:
-                st.success(message)
             else:
-                st.error(f"Nothing was indexed. {message}")
+                notice = ""
+            message = f"{notice}Indexed {files - len(skipped)} file(s): {segments} segments and {chunks} chunks."
             st.session_state.last_indexed_info = message
+            st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not chunks else "info")
         except Exception as error:
             st.error(f"Folder indexing failed: {error}")
 
@@ -343,6 +341,8 @@ def main() -> None:
 
     if "last_indexed_info" not in st.session_state:
         st.session_state.last_indexed_info = None
+    if "last_indexed_kind" not in st.session_state:
+        st.session_state.last_indexed_kind = "info"
     if "query_text" not in st.session_state:
         st.session_state.query_text = ""
     if "search_results" not in st.session_state:
@@ -363,7 +363,13 @@ def main() -> None:
     st.divider()
     st.subheader("Current chat indexing")
     if st.session_state.last_indexed_info:
-        st.info(st.session_state.last_indexed_info)
+        kind = st.session_state.last_indexed_kind
+        if kind == "warning":
+            st.warning(st.session_state.last_indexed_info)
+        elif kind == "error":
+            st.error(st.session_state.last_indexed_info)
+        else:
+            st.info(st.session_state.last_indexed_info)
     else:
         st.info("Index a file or folder in this chat to see its segment and chunk counts here.")
 

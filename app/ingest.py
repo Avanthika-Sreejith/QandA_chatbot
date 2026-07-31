@@ -13,21 +13,23 @@ def main() -> None:
     parser.add_argument("path", help="Path to a PDF, DOCX, XLSX, XLSM, TXT file, or a folder")
     args = parser.parse_args()
 
-    print("Indexing document using OpenAI embeddings and BM25…")
+    print("Indexing document using Jina AI embeddings and BM25…")
     try:
         from pathlib import Path
 
         path = Path(args.path)
         if path.is_dir():
-            files, segments, chunks = ingest_folder(path)
+            files, segments, chunks, skipped = ingest_folder(path)
             print(f"Found {files} supported file(s).")
         else:
-            segments, chunks = ingest_file(str(path))
+            segments, chunks, skipped = ingest_file(str(path))
     except Exception as error:
         raise SystemExit(f"Indexing failed: {error}") from error
 
     print(f"Parsed {segments} source segment(s).")
     print(f"Indexed {chunks} chunk(s) in Qdrant.")
+    if skipped:
+        print(f"No text extracted from: {', '.join(skipped)}.")
     print(collection_summary())
 
 

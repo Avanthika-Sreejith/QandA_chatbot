@@ -265,7 +265,7 @@ def main() -> None:
                 st.session_state.active_document_chat_name = active_chat_name
 
             saved_paths = [save_upload(uploaded) for uploaded in uploads]
-            total_segments, total_chunks = ingest_files(
+            total_segments, total_chunks, skipped = ingest_files(
                 saved_paths,
                 progress_callback=update_upload_progress,
                 document_chat_id=active_chat_id,
@@ -275,8 +275,16 @@ def main() -> None:
             upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()
-            message = f"Indexed {len(uploads)} file(s): {total_segments} segments and {total_chunks} chunks."
-            st.success(message)
+            if skipped:
+                st.warning(
+                    f"No text could be extracted from: {', '.join(skipped)}. "
+                    "These may be empty, scanned, or image-only, so they were not indexed."
+                )
+            message = f"Indexed {len(uploads) - len(skipped)} file(s): {total_segments} segments and {total_chunks} chunks."
+            if total_chunks:
+                st.success(message)
+            else:
+                st.error(f"Nothing was indexed. {message}")
             st.session_state.last_indexed_info = message
             st.session_state.upload_widget_version += 1
             st.rerun()
@@ -304,7 +312,7 @@ def main() -> None:
                 active_chat_name = Path(folder_path.strip()).name or "Indexed folder"
                 st.session_state.active_document_chat_name = active_chat_name
 
-            files, segments, chunks = ingest_folder(
+            files, segments, chunks, skipped = ingest_folder(
                 folder_path.strip(),
                 progress_callback=update_folder_progress,
                 document_chat_id=active_chat_id,
@@ -314,8 +322,16 @@ def main() -> None:
             upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()
-            message = f"Indexed {files} file(s): {segments} segments and {chunks} chunks."
-            st.success(message)
+            if skipped:
+                st.warning(
+                    f"No text could be extracted from: {', '.join(skipped)}. "
+                    "These may be empty, scanned, or image-only, so they were not indexed."
+                )
+            message = f"Indexed {files - len(skipped)} file(s): {segments} segments and {chunks} chunks."
+            if chunks:
+                st.success(message)
+            else:
+                st.error(f"Nothing was indexed. {message}")
             st.session_state.last_indexed_info = message
         except Exception as error:
             st.error(f"Folder indexing failed: {error}")

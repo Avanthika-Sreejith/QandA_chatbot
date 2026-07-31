@@ -53,7 +53,7 @@ def index_chunks(
         for chunk, dense_vector, sparse_vector in zip(batch, dense_vectors, sparse_vectors, strict=True):
             if len(dense_vector) != DENSE_VECTOR_SIZE:
                 raise ValueError(
-                    f"OpenAI returned {len(dense_vector)} dimensions; expected {DENSE_VECTOR_SIZE}."
+                    f"Embedding API returned {len(dense_vector)} dimensions; expected {DENSE_VECTOR_SIZE}."
                 )
             payload = {"text": chunk.text, **chunk.metadata}
             if document_chat_id:
@@ -83,18 +83,26 @@ def ingest_files(
     progress_callback: ProgressCallback | None = None,
     document_chat_id: str | None = None,
     document_chat_name: str | None = None,
-) -> tuple[int, int]:
-    """Parse and index several files together using one embedding batch."""
+) -> tuple[int, int, list[str]]:
+    """Parse and index several files together using one embedding batch.
+
+    Returns the number of parsed segments, the number of chunks indexed, and
+    the names of any files from which no text could be extracted.
+    """
     paths = [Path(file_path) for file_path in file_paths]
     if not paths:
-        return 0, 0
+        return 0, 0, []
 
     ensure_collection()
     parsed_segments = []
+    skipped: list[str] = []
     for number, path in enumerate(paths, start=1):
         if progress_callback:
             progress_callback(f"Parsing {path.name} ({number} of {len(paths)})…", number - 1, len(paths))
+        before = len(parsed_segments)
         parsed_segments.extend(parse_document(path))
+        if len(parsed_segments) == before:
+            skipped.append(path.name)
     if progress_callback:
         progress_callback(f"Chunking {len(parsed_segments)} parsed segment(s)…", len(paths), len(paths))
     chunks = chunk_segments(parsed_segments)
@@ -106,10 +114,10 @@ def ingest_files(
         document_chat_id=document_chat_id,
         document_chat_name=document_chat_name,
     )
-    return len(parsed_segments), indexed
+    return len(parsed_segments), indexed, skipped
 
 
-def ingest_file(file_path: str | Path) -> tuple[int, int]:
+def ingest_file(file_path: str | Path) -> tuple[int, int, list[str]]:
     """Parse, chunk, embed, and index one supported file."""
     return ingest_files([file_path])
 
@@ -119,10 +127,11 @@ def ingest_folder(
     progress_callback: ProgressCallback | None = None,
     document_chat_id: str | None = None,
     document_chat_name: str | None = None,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, list[str]]:
     """Index all supported files in a folder and its subfolders.
 
-    Returns the number of files, source segments, and chunks indexed.
+    Returns the number of files, source segments, chunks indexed, and the
+    names of any files from which no text could be extracted.
     """
     folder = Path(folder_path)
     if not folder.is_dir():
@@ -135,10 +144,10 @@ def ingest_folder(
         supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
         raise ValueError(f"No supported files found. Supported types: {supported}")
 
-    segments, chunks = ingest_files(
+    segments, chunks, skipped = ingest_files(
         files,
         progress_callback=progress_callback,
         document_chat_id=document_chat_id,
         document_chat_name=document_chat_name,
     )
-    return len(files), segments, chunks
+    return len(files), segments, chunks, skipped

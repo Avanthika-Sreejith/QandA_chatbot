@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -30,9 +30,9 @@ from app.database import (
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_document_chats(session_id: str) -> dict[str, str]:
-    """Return saved document chats from Supabase for a session."""
-    return get_all_chats(session_id)
+def get_document_chats() -> dict[str, str]:
+    """Return saved document chats from Supabase."""
+    return get_all_chats()
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -110,7 +110,8 @@ def save_upload(uploaded_file: Any) -> Path:
 
 def new_chat_name() -> str:
     """Create a readable default title for a new, initially empty chat."""
-    return f"Document chat — {datetime.now().strftime('%d %b %Y, %H:%M')}"
+    IST = timezone(timedelta(hours=5, minutes=30))
+    return f"Document chat — {datetime.now(IST).strftime('%d %b %Y, %H:%M')}"
 
 
 def has_default_chat_name(chat_name: str) -> bool:
@@ -128,13 +129,11 @@ def main() -> None:
     st.title("Document Q&A — V1")
     st.write("Add documents to the knowledge base before asking questions.")
 
-    if "session_id" not in st.session_state:
-        st.session_state.session_id = uuid4().hex
     if "active_document_chat_id" not in st.session_state:
         st.session_state.active_document_chat_id = uuid4().hex
         st.session_state.active_document_chat_name = new_chat_name()
 
-    saved_chats = get_document_chats(st.session_state.session_id)
+    saved_chats = get_document_chats()
     active_chat_id = st.session_state.active_document_chat_id
     active_chat_name = st.session_state.active_document_chat_name
     chat_options = [
@@ -155,7 +154,7 @@ def main() -> None:
         st.session_state.document_chat_picker = (chat_id, chat_name)
         st.session_state.new_document_chat_name = ""
         st.session_state.last_indexed_info = None
-        upsert_chat(chat_id, chat_name, st.session_state.session_id)
+        upsert_chat(chat_id, chat_name)
         get_document_chats.clear()
 
     with st.sidebar:
@@ -190,7 +189,7 @@ def main() -> None:
             new_name = renamed_chat.strip()
             if new_name:
                 st.session_state.active_document_chat_name = new_name
-                upsert_chat(active_chat_id, new_name, st.session_state.session_id)
+                upsert_chat(active_chat_id, new_name)
                 get_document_chats.clear()
                 st.rerun()
 
@@ -274,7 +273,7 @@ def main() -> None:
                 document_chat_name=active_chat_name,
             )
             progress.progress(1.0, text="Indexing complete")
-            upsert_chat(active_chat_id, active_chat_name, st.session_state.session_id)
+            upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:
@@ -320,7 +319,7 @@ def main() -> None:
                 document_chat_name=active_chat_name,
             )
             progress.progress(1.0, text="Indexing complete")
-            upsert_chat(active_chat_id, active_chat_name, st.session_state.session_id)
+            upsert_chat(active_chat_id, active_chat_name)
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:

@@ -28,22 +28,23 @@ def get_supabase_client() -> Client:
 # document_chats table
 # ---------------------------------------------------------------------------
 
-def upsert_chat(chat_id: str, chat_name: str) -> None:
+def upsert_chat(chat_id: str, chat_name: str, session_id: str) -> None:
     """Insert or update a document chat record."""
     client = get_supabase_client()
     client.table("document_chats").upsert(
-        {"id": chat_id, "name": chat_name},
+        {"id": chat_id, "name": chat_name, "session_id": session_id},
         on_conflict="id",
     ).execute()
 
 
-def get_all_chats() -> dict[str, str]:
-    """Return all document chats as {id: name}."""
+def get_all_chats(session_id: str) -> dict[str, str]:
+    """Return document chats for a session as {id: name}."""
     try:
         client = get_supabase_client()
         response = (
             client.table("document_chats")
             .select("id, name")
+            .eq("session_id", session_id)
             .order("created_at", desc=False)
             .execute()
         )

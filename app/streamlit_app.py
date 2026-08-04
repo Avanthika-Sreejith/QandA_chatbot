@@ -30,9 +30,9 @@ from app.database import (
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_document_chats() -> dict[str, str]:
-    """Return saved document chats from Supabase."""
-    return get_all_chats()
+def get_document_chats(session_id: str) -> dict[str, str]:
+    """Return saved document chats from Supabase for a session."""
+    return get_all_chats(session_id)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -128,11 +128,13 @@ def main() -> None:
     st.title("Document Q&A — V1")
     st.write("Add documents to the knowledge base before asking questions.")
 
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = uuid4().hex
     if "active_document_chat_id" not in st.session_state:
         st.session_state.active_document_chat_id = uuid4().hex
         st.session_state.active_document_chat_name = new_chat_name()
 
-    saved_chats = get_document_chats()
+    saved_chats = get_document_chats(st.session_state.session_id)
     active_chat_id = st.session_state.active_document_chat_id
     active_chat_name = st.session_state.active_document_chat_name
     chat_options = [
@@ -153,7 +155,7 @@ def main() -> None:
         st.session_state.document_chat_picker = (chat_id, chat_name)
         st.session_state.new_document_chat_name = ""
         st.session_state.last_indexed_info = None
-        upsert_chat(chat_id, chat_name)
+        upsert_chat(chat_id, chat_name, st.session_state.session_id)
         get_document_chats.clear()
 
     with st.sidebar:
@@ -188,7 +190,7 @@ def main() -> None:
             new_name = renamed_chat.strip()
             if new_name:
                 st.session_state.active_document_chat_name = new_name
-                upsert_chat(active_chat_id, new_name)
+                upsert_chat(active_chat_id, new_name, st.session_state.session_id)
                 get_document_chats.clear()
                 st.rerun()
 
@@ -272,7 +274,7 @@ def main() -> None:
                 document_chat_name=active_chat_name,
             )
             progress.progress(1.0, text="Indexing complete")
-            upsert_chat(active_chat_id, active_chat_name)
+            upsert_chat(active_chat_id, active_chat_name, st.session_state.session_id)
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:
@@ -318,7 +320,7 @@ def main() -> None:
                 document_chat_name=active_chat_name,
             )
             progress.progress(1.0, text="Indexing complete")
-            upsert_chat(active_chat_id, active_chat_name)
+            upsert_chat(active_chat_id, active_chat_name, st.session_state.session_id)
             get_document_chats.clear()
             get_chat_files.clear()
             if skipped:

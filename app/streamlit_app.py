@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shutil import copyfileobj
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
+from zipfile import BadZipFile, ZipFile
 
 import streamlit as st
 from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue
@@ -106,6 +108,52 @@ def save_upload(uploaded_file: Any) -> Path:
     destination = UPLOAD_DIRECTORY / f"{uuid4().hex}_{safe_name}"
     destination.write_bytes(uploaded_file.getbuffer())
     return destination
+
+
+MAX_ZIP_FILES = 1_000
+MAX_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
+
+
+def extract_zip_upload(uploaded_file: Any) -> list[Path]:
+    """Safely extract supported documents from an uploaded ZIP archive.
+
+    The archive hierarchy is retained so that nested folders remain visible in
+    the indexed-file list. Files outside the supported document types are
+    ignored.
+    """
+    UPLOAD_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    archive_root = UPLOAD_DIRECTORY / f"{uuid4().hex}_{Path(uploaded_file.name).stem}"
+    archive_root.mkdir(parents=True, exist_ok=False)
+    extracted: list[Path] = []
+    total_size = 0
+
+    try:
+        with ZipFile(uploaded_file) as archive:
+            members = [info for info in archive.infolist() if not info.is_dir()]
+            if len(members) > MAX_ZIP_FILES:
+                raise ValueError(f"ZIP files may contain at most {MAX_ZIP_FILES} files.")
+
+            for info in members:
+                member_path = Path(info.filename)
+                # Block absolute paths and ../ traversal (Zip Slip).
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    raise ValueError("ZIP contains an unsafe file path.")
+                if member_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+                    continue
+
+                total_size += info.file_size
+                if total_size > MAX_ZIP_UNCOMPRESSED_BYTES:
+                    raise ValueError("Supported files in the ZIP exceed the 500 MB extraction limit.")
+
+                destination = archive_root / member_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as source, destination.open("wb") as target:
+                    copyfileobj(source, target)
+                extracted.append(destination)
+    except BadZipFile as error:
+        raise ValueError("The selected file is not a valid ZIP archive.") from error
+
+    return extracted
 
 
 def new_chat_name() -> str:
@@ -291,6 +339,57 @@ def main() -> None:
         except Exception as error:
             st.error(f"Indexing failed: {error}")
 
+    st.caption("Or upload a ZIP to index all supported documents from a folder and its subfolders.")
+    if "zip_upload_widget_version" not in st.session_state:
+        st.session_state.zip_upload_widget_version = 0
+    zip_upload = st.file_uploader(
+        "Upload a folder as ZIP",
+        type=["zip"],
+        accept_multiple_files=False,
+        help="The ZIP may contain PDF, DOCX, XLSX, XLSM, and TXT files in nested folders.",
+        key=f"upload_zip_{st.session_state.zip_upload_widget_version}",
+    )
+    if st.button("Index ZIP folder", disabled=zip_upload is None, use_container_width=True):
+        try:
+            from app.ingestion.indexing import ingest_files
+
+            progress = st.progress(0, text="Reading ZIP folder…")
+            extracted_paths = extract_zip_upload(zip_upload)
+            if not extracted_paths:
+                raise ValueError("No supported documents were found in this ZIP.")
+
+            def update_zip_progress(message: str, current: int, total: int) -> None:
+                fraction = current / total if total else 0
+                progress.progress(min(max(fraction, 0.0), 1.0), text=message)
+
+            if has_default_chat_name(active_chat_name):
+                active_chat_name = Path(zip_upload.name).stem or "Indexed folder"
+                st.session_state.active_document_chat_name = active_chat_name
+
+            total_segments, total_chunks, skipped = ingest_files(
+                extracted_paths,
+                progress_callback=update_zip_progress,
+                document_chat_id=active_chat_id,
+                document_chat_name=active_chat_name,
+            )
+            progress.progress(1.0, text="Indexing complete")
+            upsert_chat(active_chat_id, active_chat_name)
+            get_document_chats.clear()
+            get_chat_files.clear()
+            indexed_files = len(extracted_paths) - len(skipped)
+            notice = ""
+            if skipped:
+                notice = f"No text could be extracted from: {', '.join(skipped)}.\n\n"
+            st.session_state.last_indexed_info = (
+                f"{notice}Indexed {indexed_files} file(s) from {zip_upload.name}: "
+                f"{total_segments} segments and {total_chunks} chunks."
+            )
+            st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not total_chunks else "info")
+            st.session_state.zip_upload_widget_version += 1
+            st.rerun()
+        except Exception as error:
+            st.error(f"ZIP indexing failed: {error}")
+
     st.divider()
     st.subheader("Index a local folder")
     folder_path = st.text_input(
@@ -337,7 +436,7 @@ def main() -> None:
 
     st.caption(
         "A web browser cannot reliably grant a Streamlit app access to an arbitrary folder on your computer. "
-        "Use the folder path when Streamlit runs locally; otherwise upload files individually."
+        "Use the folder path when Streamlit runs locally; otherwise upload files individually or upload a ZIP folder."
     )
 
     if "last_indexed_info" not in st.session_state:

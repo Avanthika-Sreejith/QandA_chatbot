@@ -390,55 +390,6 @@ def main() -> None:
         except Exception as error:
             st.error(f"ZIP indexing failed: {error}")
 
-    st.divider()
-    st.subheader("Index a local folder")
-    folder_path = st.text_input(
-        "Folder path",
-        placeholder=r"C:\\Documents\\Project files",
-        help="Indexes supported files in this folder and all subfolders. This path must be accessible to the computer running Streamlit.",
-    )
-    if st.button("Index folder", disabled=not folder_path.strip(), use_container_width=True):
-        try:
-            from app.ingestion.indexing import ingest_folder
-
-            progress = st.progress(0, text="Preparing folder…")
-
-            def update_folder_progress(message: str, current: int, total: int) -> None:
-                fraction = current / total if total else 0
-                progress.progress(min(max(fraction, 0.0), 1.0), text=message)
-
-            if has_default_chat_name(active_chat_name):
-                active_chat_name = Path(folder_path.strip()).name or "Indexed folder"
-                st.session_state.active_document_chat_name = active_chat_name
-
-            files, segments, chunks, skipped = ingest_folder(
-                folder_path.strip(),
-                progress_callback=update_folder_progress,
-                document_chat_id=active_chat_id,
-                document_chat_name=active_chat_name,
-            )
-            progress.progress(1.0, text="Indexing complete")
-            upsert_chat(active_chat_id, active_chat_name)
-            get_document_chats.clear()
-            get_chat_files.clear()
-            if skipped:
-                notice = (
-                    f"No text could be extracted from: {', '.join(skipped)}. "
-                    "These may be empty, scanned, or image-only, so they were not indexed.\n\n"
-                )
-            else:
-                notice = ""
-            message = f"{notice}Indexed {files - len(skipped)} file(s): {segments} segments and {chunks} chunks."
-            st.session_state.last_indexed_info = message
-            st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not chunks else "info")
-        except Exception as error:
-            st.error(f"Folder indexing failed: {error}")
-
-    st.caption(
-        "A web browser cannot reliably grant a Streamlit app access to an arbitrary folder on your computer. "
-        "Use the folder path when Streamlit runs locally; otherwise upload files individually or upload a ZIP folder."
-    )
-
     if "last_indexed_info" not in st.session_state:
         st.session_state.last_indexed_info = None
     if "last_indexed_kind" not in st.session_state:

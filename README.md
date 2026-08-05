@@ -115,7 +115,7 @@ Start Qdrant first, activate the virtual environment, then run:
 streamlit run app/streamlit_app.py
 ```
 
-The screen accepts multiple PDF, DOCX, XLSX, XLSM, and TXT files at once. It also accepts a local folder path and indexes matching files recursively. A browser cannot natively upload an arbitrary folder to Streamlit, so the folder path option works when Streamlit is running on the same computer as the folder. For a deployed app, users can instead upload a ZIP archive: supported documents inside the archive (including nested folders) are extracted and indexed together.
+The screen accepts multiple PDF, DOCX, XLSX, XLSM, and TXT files at once. For a complete folder, users can upload a ZIP archive: supported documents inside the archive (including nested folders) are extracted and indexed together.
 
 ### Hosting: preload embedding models
 

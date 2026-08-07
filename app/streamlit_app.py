@@ -477,18 +477,20 @@ def main() -> None:
                 continue
             # --- synthesised answer ---
             st.markdown(answer)
-            # --- exact citations for the chunks used ---
+            # --- citations for only the chunks the answer used ---
+            # Numbers match the "View retrieved chunks" list below.
             citation_lines: list[str] = []
             for idx, result in enumerate(results, start=1):
-                citation_lines.append(f"[{idx}] {format_citation(result)}")
+                if result.get("used", True):
+                    citation_lines.append(f"[{idx}] {format_citation(result)}")
             if citation_lines:
                 st.markdown("---")
                 st.caption("**Sources**  \n" + "  \n".join(citation_lines))
             # --- retrieved-chunk evidence ---
             with st.expander("View retrieved chunks"):
-                for result in results:
+                for idx, result in enumerate(results, start=1):
                     score = result.get("score") or 0.0
-                    st.markdown(f"**Similarity:** {score:.2f}  \n{format_citation(result)}")
+                    st.markdown(f"**[{idx}]** Similarity: {score:.2f}  \n{format_citation(result)}")
                     st.markdown((result.get("text") or "").strip())
 
     query_text = st.chat_input("Ask a question about these documents")
@@ -513,7 +515,11 @@ def main() -> None:
                             "payload": payload,
                         }
                     )
-                answer = generate_answer(query_text, results)
+                answer, used_numbers = generate_answer(query_text, results)
+                valid_numbers = [n for n in used_numbers if 1 <= n <= len(results)]
+                used_indices = sorted({n - 1 for n in valid_numbers}) if valid_numbers else list(range(len(results)))
+                for index, result in enumerate(results):
+                    result["used"] = index in used_indices
                 append_message(active_chat_id, query_text, answer, results)
                 chat_history.append({"question": query_text, "results": results, "answer": answer})
                 st.rerun()

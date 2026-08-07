@@ -30,3 +30,7 @@ SEMANTIC_MAX_CHARACTERS = int(os.getenv("SEMANTIC_MAX_CHARACTERS", "3500"))
 RRF_K = int(os.getenv("RRF_K", "60"))
 SEARCH_RRF_THRESHOLD = float(os.getenv("SEARCH_RRF_THRESHOLD", "0.016"))
 BROAD_SEARCH_TOP_K = int(os.getenv("BROAD_SEARCH_TOP_K", "20"))
+# Phase-1 source selection only keeps a file when its best chunk scores at least
+# this fraction of the strongest file's best chunk. A file whose evidence is
+# only half as strong as the leader is likely noise, not a second source.
+SOURCE_SELECTION_RATIO = float(os.getenv("SOURCE_SELECTION_RATIO", "0.6"))

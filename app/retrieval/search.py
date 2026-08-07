@@ -12,7 +12,7 @@ from qdrant_client.models import (
     SparseVector,
 )
 
-from app.config import BROAD_SEARCH_TOP_K, RRF_K, SEARCH_RRF_THRESHOLD
+from app.config import BROAD_SEARCH_TOP_K, RRF_K, SEARCH_RRF_THRESHOLD, SOURCE_SELECTION_RATIO
 from app.embeddings import get_dense_embeddings, get_sparse_embeddings
 from app.retrieval.collection import DENSE_VECTOR_NAME, QDRANT_COLLECTION, SPARSE_VECTOR_NAME, get_client
 
@@ -123,10 +123,11 @@ def search_documents(
     semantic search ranks too low, and the two together suppress weak noise.
 
     Phase 1 scans the whole search scope and keeps only the file(s) whose
-    strongest chunk meets the RRF threshold, so unrelated files never appear
-    in the answer. Phase 2 re-searches within those selected files only, then
-    rejects individual weak chunks using the same threshold. If more than one
-    file has strong evidence, all of them are returned.
+    strongest chunk meets the RRF threshold and is close to the strongest file
+    (SOURCE_SELECTION_RATIO), so unrelated files never appear in the answer.
+    Phase 2 re-searches within those selected files only, then rejects weak
+    chunks using the RRF threshold. If more than one file has strong evidence,
+    all of them are returned.
     """
     query_vector = get_dense_embeddings([query])[0]
     sparse = get_sparse_embeddings([query])[0]
@@ -146,8 +147,14 @@ def search_documents(
             continue
         best_scores[file_path] = max(best_scores.get(file_path, 0.0), score)
 
+    if not best_scores:
+        return []
+    top_score = max(best_scores.values())
+    selection_floor = max(rrf_threshold, SOURCE_SELECTION_RATIO * top_score)
     selected_files = [
-        file_path for file_path, score in best_scores.items() if score >= rrf_threshold
+        file_path
+        for file_path, score in best_scores.items()
+        if score >= rrf_threshold and score >= selection_floor
     ]
     if not selected_files:
         return []

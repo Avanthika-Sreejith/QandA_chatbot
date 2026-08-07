@@ -16,3 +16,15 @@ DENSE_VECTOR_SIZE = 1024
 JINA_EMBEDDING_MODEL = "jina-embeddings-v3"
 JINA_EMBEDDING_URL = "https://api.jina.ai/v1"
 SPARSE_EMBEDDING_MODEL = "Qdrant/bm25"
+
+# Semantic chunking uses the same Jina embedding API as retrieval to identify
+# topic shifts. These are safety limits, not fixed chunk targets.
+SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.72"))
+SEMANTIC_MIN_SENTENCES = int(os.getenv("SEMANTIC_MIN_SENTENCES", "2"))
+SEMANTIC_MAX_CHARACTERS = int(os.getenv("SEMANTIC_MAX_CHARACTERS", "3500"))
+
+# Retrieval uses a two-phase search: detect the best source file(s), then
+# re-search within those files only. Chunks whose cosine score falls below the
+# threshold are rejected as weak evidence.
+SEARCH_SCORE_THRESHOLD = float(os.getenv("SEARCH_SCORE_THRESHOLD", "0.50"))
+BROAD_SEARCH_TOP_K = int(os.getenv("BROAD_SEARCH_TOP_K", "20"))

@@ -110,6 +110,38 @@ def save_upload(uploaded_file: Any) -> Path:
     return destination
 
 
+def format_citation(result: dict[str, Any]) -> str:
+    """Build an exact source citation from a retrieved chunk.
+
+    Examples:
+      Project_Management.pdf — page 4, chunk 2 of 6
+      Budget.xlsx — Sheet: Expenses, rows 12–30, chunk 1 of 2
+      Notes.docx — Section: Risk Management, paragraph 18
+    """
+    payload = result.get("payload") or {}
+    file_name = Path(result.get("source", "unknown")).name
+    source_type = payload.get("source_type", "")
+    details: list[str] = []
+
+    if source_type == "pdf" and payload.get("page"):
+        details.append(f"page {payload['page']}")
+    if payload.get("section"):
+        details.append(f"Section: {payload['section']}")
+    if payload.get("sheet"):
+        details.append(f"Sheet: {payload['sheet']}")
+    if payload.get("paragraph"):
+        details.append(f"paragraph {payload['paragraph']}")
+    if payload.get("table"):
+        details.append(f"Table {payload['table']}")
+    if payload.get("table_row_start") is not None and payload.get("table_row_end") is not None:
+        details.append(f"rows {payload['table_row_start']}–{payload['table_row_end']}")
+    if payload.get("chunk_index") is not None and payload.get("chunk_count"):
+        details.append(f"chunk {payload['chunk_index'] + 1} of {payload['chunk_count']}")
+
+    suffix = ", ".join(details)
+    return f"{file_name} — {suffix}" if suffix else file_name
+
+
 MAX_ZIP_FILES = 1_000
 MAX_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
 
@@ -445,19 +477,19 @@ def main() -> None:
                 continue
             # --- synthesised answer ---
             st.markdown(answer)
-            # --- inline citations ---
-            seen_sources: set[str] = set()
+            # --- exact citations for the chunks used ---
             citation_lines: list[str] = []
-            citation_idx = 1
-            for result in results:
-                src = result["source"]
-                if src not in seen_sources:
-                    seen_sources.add(src)
-                    citation_lines.append(f"[{citation_idx}] {Path(src).name}")
-                    citation_idx += 1
+            for idx, result in enumerate(results, start=1):
+                citation_lines.append(f"[{idx}] {format_citation(result)}")
             if citation_lines:
                 st.markdown("---")
                 st.caption("**Sources**  \n" + "  \n".join(citation_lines))
+            # --- retrieved-chunk evidence ---
+            with st.expander("View retrieved chunks"):
+                for result in results:
+                    score = result.get("score") or 0.0
+                    st.markdown(f"**Similarity:** {score:.2f}  \n{format_citation(result)}")
+                    st.markdown((result.get("text") or "").strip())
 
     query_text = st.chat_input("Ask a question about these documents")
     if query_text and query_text.strip():
@@ -478,6 +510,7 @@ def main() -> None:
                             "text": payload.get("text", ""),
                             "source": payload.get("file_path", payload.get("file_name", "unknown")),
                             "score": score,
+                            "payload": payload,
                         }
                     )
                 answer = generate_answer(query_text, results)

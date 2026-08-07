@@ -490,7 +490,7 @@ def main() -> None:
             with st.expander("View retrieved chunks"):
                 for idx, result in enumerate(results, start=1):
                     score = result.get("score") or 0.0
-                    st.markdown(f"**[{idx}]** Similarity: {score:.2f}  \n{format_citation(result)}")
+                    st.markdown(f"**[{idx}]** Relevance: {score:.3f}  \n{format_citation(result)}")
                     st.markdown((result.get("text") or "").strip())
 
     query_text = st.chat_input("Ask a question about these documents")

@@ -26,6 +26,32 @@ class ChunkedSegment:
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|(?<=\n)\s*(?=\S)")
 
+_PAGE_FOOTER = re.compile(r"(?i)^(?:page\s+)?\d+\s*(?:[-–/of]*\s*\d+)?\.?\s*$")
+_COURSE_OUTCOME_TAG = re.compile(r"^[cC][oO]?\d+\s*\(\s*\d+\s*\)\s*$")
+_DIAGRAM_LABELS = {"START", "END", "STOP"}
+
+
+def _is_junk(text: str) -> bool:
+    """Return True when a chunk is pure extraction noise, not document content.
+
+    Conservative rules: symbol-only diagram borders, page-number footers,
+    course-outcome grading tags, and single-token flow-diagram labels. These
+    never carry retrievable meaning on their own, so dropping them keeps noise
+    out of the index without risking real content.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if not any(char.isalnum() for char in stripped):
+        return True
+    if len(stripped) <= 12 and _PAGE_FOOTER.fullmatch(stripped):
+        return True
+    if _COURSE_OUTCOME_TAG.fullmatch(stripped):
+        return True
+    if stripped in _DIAGRAM_LABELS and not any(char in stripped for char in ".!?;:,"):
+        return True
+    return False
+
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into useful semantic candidates without discarding content."""
@@ -97,6 +123,8 @@ def chunk_segments(segments: Iterable[ParsedSegment]) -> list[ChunkedSegment]:
             method = "semantic"
 
         for chunk_index, text in enumerate(chunks):
+            if _is_junk(text):
+                continue
             metadata = dict(segment.metadata)
             metadata.update(
                 {

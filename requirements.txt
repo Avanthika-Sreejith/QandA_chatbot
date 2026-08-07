@@ -9,6 +9,7 @@ openpyxl>=3.1,<4.0
 chonkie>=1.0,<2.0
 fastembed>=0.4,<1.0
 openai>=1.0,<2.0
+rapidocr_onnxruntime>=1.2.3,<2.0
 
 # Week 2-3: answering and API/UI
 groq>=0.11,<1.0

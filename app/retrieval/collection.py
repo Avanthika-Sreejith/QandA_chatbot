@@ -42,7 +42,7 @@ def ensure_collection() -> bool:
         if existing_dense is not None and existing_dense.size != DENSE_VECTOR_SIZE:
             raise RuntimeError(
                 f"The existing collection uses {existing_dense.size} dense dimensions, but "
-                f"{DENSE_VECTOR_SIZE} dimensions are required for Qwen3. Delete the empty "
+                f"{DENSE_VECTOR_SIZE} dimensions are required for Jina embeddings. Delete the "
                 "`document_chunks` collection in the Qdrant dashboard, then run this command again."
             )
     else:

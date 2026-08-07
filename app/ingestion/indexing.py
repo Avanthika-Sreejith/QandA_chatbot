@@ -23,6 +23,21 @@ def _make_point_id(chunk: ChunkedSegment, document_chat_id: str | None = None) -
 
 ProgressCallback = Callable[[str, int, int], None]
 
+_DEFAULT_SECTION = "Document body"
+
+
+def _embedding_text(chunk: ChunkedSegment) -> str:
+    """Return the text used for embeddings, prefixed with its section heading.
+
+    Contextualising each chunk with its section makes it match queries about
+    the section's topic, instead of only the bare body text. The stored text
+    stays clean; only the embedding input carries the prefix.
+    """
+    section = (chunk.metadata.get("section") or "").strip()
+    if section and section != _DEFAULT_SECTION and section != chunk.text:
+        return f"{section}\n{chunk.text}"
+    return chunk.text
+
 
 def index_chunks(
     chunks: list[ChunkedSegment],
@@ -45,9 +60,9 @@ def index_chunks(
         if progress_callback:
             progress_callback(f"Embedding and saving batch {batch_number} of {total_batches}…", batch_number - 1, total_batches)
         batch = chunks[start : start + batch_size]
-        texts = [chunk.text for chunk in batch]
-        dense_vectors = get_dense_embeddings(texts)
-        sparse_vectors = get_sparse_embeddings(texts)
+        embedding_texts = [_embedding_text(chunk) for chunk in batch]
+        dense_vectors = get_dense_embeddings(embedding_texts)
+        sparse_vectors = get_sparse_embeddings(embedding_texts)
 
         points: list[PointStruct] = []
         for chunk, dense_vector, sparse_vector in zip(batch, dense_vectors, sparse_vectors, strict=True):

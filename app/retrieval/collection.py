@@ -57,13 +57,14 @@ def ensure_collection() -> bool:
         )
         collection_created = True
 
-    # Qdrant Cloud requires an explicit payload index for filtered chat searches.
-    client.create_payload_index(
-        collection_name=QDRANT_COLLECTION,
-        field_name="document_chat_id",
-        field_schema=PayloadSchemaType.KEYWORD,
-        wait=True,
-    )
+    # Qdrant Cloud requires explicit payload indexes for filtered searches.
+    for field_name in ("document_chat_id", "file_path"):
+        client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name=field_name,
+            field_schema=PayloadSchemaType.KEYWORD,
+            wait=True,
+        )
     return collection_created
 
 

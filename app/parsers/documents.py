@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import fitz
 import re
 import tempfile
 from zipfile import ZipFile
@@ -13,6 +14,7 @@ from zipfile import ZipFile
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".txt"}
 TABLE_ROWS_PER_SEGMENT = 20
 MIN_OCR_IMAGE_SIZE = (30, 15)  # ignore tiny icons/decorative marks
+STANDALONE_OCR_IMAGE_SIZE = (200, 60)  # ignore logos/borders; capture screenshot tables
 MAX_OCR_IMAGES_PER_TABLE = 6
 
 
@@ -136,6 +138,51 @@ def _line_overlaps_tables(line_rect: Any, table_boxes: list[Any]) -> bool:
     return False
 
 
+def _image_overlaps_tables(image_rect: Any, table_boxes: list[Any]) -> bool:
+    """Return True when an image sits mostly inside a detected table region."""
+    if not table_boxes:
+        return False
+    image_area = image_rect.get_area()
+    if image_area <= 0:
+        return False
+    for table_rect in table_boxes:
+        intersection = image_rect & table_rect
+        if not intersection.is_empty and intersection.get_area() / image_area > 0.5:
+            return True
+    return False
+
+
+def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int, int]) -> str | None:
+    """OCR one rendered image region and return its recognised text.
+
+    Returns None when the image is too small to read or OCR fails, so callers
+    can treat it as "nothing extracted".
+    """
+    if image_rect.width < min_size[0] or image_rect.height < min_size[1]:
+        return None
+    try:
+        if ocr_engine is None:
+            from rapidocr_onnxruntime import RapidOCR
+
+            ocr_engine = RapidOCR()
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), clip=image_rect)
+        # A named temp file keeps its handle open on Windows, which blocks the
+        # writer and the OCR engine; write into a fresh temp directory instead.
+        tmp_dir = Path(tempfile.mkdtemp(prefix="rag_ocr_"))
+        tmp_path = tmp_dir / "image.png"
+        pixmap.save(str(tmp_path))
+        try:
+            result, _ = ocr_engine(str(tmp_path))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+            tmp_dir.rmdir()
+        if result:
+            return " ".join(item[1] for item in result)
+    except Exception:
+        return None
+    return None
+
+
 def parse_pdf(path: Path) -> list[ParsedSegment]:
     """Return per-page segments: headings, prose sections, and detected tables."""
     import fitz
@@ -150,7 +197,8 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                 if block.get("type") == 0
                 for line in block.get("lines", [])
             ]
-            if not all_lines:
+            image_infos = page.get_image_info()
+            if not all_lines and not image_infos:
                 continue
 
             # Detect native tables first; index them as header-preserving row groups.
@@ -162,7 +210,6 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
             except Exception:
                 table_finder = None
             if table_finder is not None:
-                image_infos = page.get_image_info()
                 for table_number, table in enumerate(table_finder.tables, start=1):
                     table_rect = fitz.Rect(table.bbox)
                     table_boxes.append(table_rect)
@@ -175,33 +222,15 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                     ocr_texts: list[str] = []
                     if intersecting:
                         has_rows = any(cell.strip() for row in rows for cell in row)
-                        min_w, min_h = MIN_OCR_IMAGE_SIZE
                         table_area = table_rect.get_area()
                         for info in intersecting[:MAX_OCR_IMAGES_PER_TABLE]:
                             image_rect = fitz.Rect(info["bbox"])
-                            if image_rect.width < min_w or image_rect.height < min_h:
-                                continue
-                            image_area = image_rect.get_area()
                             # Skip a screenshot that just duplicates the whole table.
-                            if has_rows and table_area > 0 and image_area / table_area > 0.5:
+                            if has_rows and table_area > 0 and image_rect.get_area() / table_area > 0.5:
                                 continue
-                            try:
-                                if ocr_engine is None:
-                                    from rapidocr_onnxruntime import RapidOCR
-
-                                    ocr_engine = RapidOCR()
-                                pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), clip=image_rect)
-                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                                    tmp_path = Path(tmp.name)
-                                pixmap.save(str(tmp_path))
-                                try:
-                                    result, _ = ocr_engine(str(tmp_path))
-                                finally:
-                                    tmp_path.unlink(missing_ok=True)
-                                if result:
-                                    ocr_texts.append(" ".join(item[1] for item in result))
-                            except Exception:
-                                continue
+                            ocr_text = _ocr_image(page, image_rect, ocr_engine, MIN_OCR_IMAGE_SIZE)
+                            if ocr_text:
+                                ocr_texts.append(ocr_text)
                     table_segments.extend(
                         _table_row_groups(
                             rows,
@@ -213,6 +242,32 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                             page=index,
                         )
                     )
+
+            # OCR images that are not covered by any detected native table, such
+            # as screenshot tables that find_tables cannot detect.
+            standalone_count = 0
+            for info in image_infos:
+                if standalone_count >= MAX_OCR_IMAGES_PER_TABLE:
+                    break
+                image_rect = fitz.Rect(info["bbox"])
+                if _image_overlaps_tables(image_rect, table_boxes):
+                    continue
+                ocr_text = _ocr_image(page, image_rect, ocr_engine, STANDALONE_OCR_IMAGE_SIZE)
+                if not ocr_text:
+                    continue
+                standalone_count += 1
+                segments.append(
+                    ParsedSegment(
+                        f"[Image content]\n{ocr_text}",
+                        _base_metadata(path)
+                        | {
+                            "source_type": "pdf_image",
+                            "content_kind": "image",
+                            "page": index,
+                            "section": "Image content",
+                        },
+                    )
+                )
 
             # Body font size is measured from text outside the detected tables.
             non_table_lines = [

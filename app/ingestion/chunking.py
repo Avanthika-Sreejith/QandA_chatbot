@@ -115,7 +115,7 @@ def chunk_segments(segments: Iterable[ParsedSegment]) -> list[ChunkedSegment]:
     output: list[ChunkedSegment] = []
     for source_index, segment in enumerate(segments):
         content_kind = segment.metadata.get("content_kind", "prose")
-        if content_kind in ("table", "heading"):
+        if content_kind in ("table", "heading", "image"):
             chunks = [segment.text]
             method = content_kind
         else:

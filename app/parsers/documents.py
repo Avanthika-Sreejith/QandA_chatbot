@@ -153,6 +153,43 @@ def _image_overlaps_tables(image_rect: Any, table_boxes: list[Any]) -> bool:
     return False
 
 
+def _is_section_name_line(text: str) -> bool:
+    """True for short, punctuation-free, Title-Case lines (section titles)."""
+    if not (2 <= len(text) <= 45):
+        return False
+    if any(char in text for char in ".,:;!?()"):
+        return False
+    if not text[0].isupper():
+        return False
+    if len(text.split()) < 2:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z][A-Za-z &'\-/]*", text))
+
+
+def _drop_section_name_runs(lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove runs of 3+ consecutive bare section-title lines (navigation lists)."""
+    flags = [
+        _is_section_name_line(
+            "".join(span.get("text", "") for span in line.get("spans", [])).strip()
+        )
+        for line in lines
+    ]
+    keep = [True] * len(lines)
+    i = 0
+    while i < len(flags):
+        if flags[i]:
+            j = i
+            while j < len(flags) and flags[j]:
+                j += 1
+            if j - i >= 3:
+                for k in range(i, j):
+                    keep[k] = False
+            i = j
+        else:
+            i += 1
+    return [line for line, keep_line in zip(lines, keep) if keep_line]
+
+
 def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int, int]) -> str | None:
     """OCR one rendered image region and return its recognised text.
 
@@ -281,6 +318,7 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                 for line in all_lines
                 if not _line_overlaps_tables(fitz.Rect(line.get("bbox")), table_boxes)
             ]
+            non_table_lines = _drop_section_name_runs(non_table_lines)
             non_table_spans = [
                 span
                 for line in non_table_lines

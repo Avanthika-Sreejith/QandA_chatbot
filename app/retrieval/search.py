@@ -111,7 +111,7 @@ def _fused_query(
 
 def search_documents(
     query: str,
-    top_k: int = 5,
+    top_k: int = 8,
     file_paths: list[str] | None = None,
     document_chat_id: str | None = None,
     rrf_threshold: float = SEARCH_RRF_THRESHOLD,

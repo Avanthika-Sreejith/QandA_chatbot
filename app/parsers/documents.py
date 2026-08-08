@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import fitz
+import math
 import re
 import tempfile
 from zipfile import ZipFile
@@ -13,8 +14,8 @@ from zipfile import ZipFile
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".txt"}
 TABLE_ROWS_PER_SEGMENT = 20
-MIN_OCR_IMAGE_SIZE = (30, 15)  # ignore tiny icons/decorative marks
-STANDALONE_OCR_IMAGE_SIZE = (200, 60)  # ignore logos/borders; capture screenshot tables
+MIN_OCR_IMAGE_SIZE = (25, 12)  # ignore tiny icons/decorative marks
+STANDALONE_OCR_IMAGE_SIZE = (60, 12)  # ignore logos/borders; capture inline formula images
 MAX_OCR_IMAGES_PER_TABLE = 6
 
 
@@ -155,8 +156,9 @@ def _image_overlaps_tables(image_rect: Any, table_boxes: list[Any]) -> bool:
 def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int, int]) -> str | None:
     """OCR one rendered image region and return its recognised text.
 
-    Returns None when the image is too small to read or OCR fails, so callers
-    can treat it as "nothing extracted".
+    Renders the region at a zoom high enough for small inline equations and
+    returns None when the image is too small, OCR fails, or the recognised text
+    is too short to be meaningful (icons/logos).
     """
     if image_rect.width < min_size[0] or image_rect.height < min_size[1]:
         return None
@@ -165,7 +167,9 @@ def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int,
             from rapidocr_onnxruntime import RapidOCR
 
             ocr_engine = RapidOCR()
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), clip=image_rect)
+        # Target a rendered text height of ~48px so tiny equations stay legible.
+        zoom = min(8, max(3, math.ceil(48 / max(image_rect.height, 1))))
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=image_rect)
         # A named temp file keeps its handle open on Windows, which blocks the
         # writer and the OCR engine; write into a fresh temp directory instead.
         tmp_dir = Path(tempfile.mkdtemp(prefix="rag_ocr_"))
@@ -177,7 +181,9 @@ def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int,
             tmp_path.unlink(missing_ok=True)
             tmp_dir.rmdir()
         if result:
-            return " ".join(item[1] for item in result)
+            text = " ".join(item[1] for item in result).strip()
+            if len(text) >= 6 and len(text.split()) >= 2:
+                return text
     except Exception:
         return None
     return None

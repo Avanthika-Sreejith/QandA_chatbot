@@ -309,7 +309,12 @@ def _ocr_image(
             text = " ".join(item[1] for item in result).strip()
             if len(text) >= 6 and len(text.split()) >= 2:
                 return text
-    except Exception:
+    except Exception as error:
+        import logging
+
+        logging.getLogger("ocr").warning(
+            "OCR failed for region %s: %s", tuple(round(v, 1) for v in image_rect), error
+        )
         return None
     return None
 

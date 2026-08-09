@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from shutil import copyfileobj
 import sys
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
@@ -216,10 +217,23 @@ def main() -> None:
     saved_chats = get_document_chats()
     active_chat_id = st.session_state.active_document_chat_id
     active_chat_name = st.session_state.active_document_chat_name
-    chat_options = [
+    all_chats = [
         (active_chat_id, active_chat_name),
         *((chat_id, chat_name) for chat_id, chat_name in saved_chats.items() if chat_id != active_chat_id),
     ]
+    chat_name_counts = Counter(chat_name for _, chat_name in all_chats)
+
+    def chat_label(chat_id: str) -> str:
+        """Display chat name, disambiguating duplicate names with a short ID."""
+        chat_name = next(
+            (name for cid, name in all_chats if cid == chat_id),
+            chat_id,
+        )
+        if chat_name_counts[chat_name] > 1:
+            return f"{chat_name} ({chat_id[:6]})"
+        return chat_name
+
+    chat_options = [chat_id for chat_id, _ in all_chats]
     if st.session_state.get("document_chat_picker") not in chat_options:
         st.session_state.document_chat_picker = chat_options[0]
 
@@ -231,7 +245,7 @@ def main() -> None:
         )
         st.session_state.active_document_chat_id = chat_id
         st.session_state.active_document_chat_name = chat_name
-        st.session_state.document_chat_picker = (chat_id, chat_name)
+        st.session_state.document_chat_picker = chat_id
         st.session_state.new_document_chat_name = ""
         st.session_state.last_indexed_info = None
         upsert_chat(chat_id, chat_name)
@@ -239,14 +253,17 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Document chats")
-        selected_chat = st.selectbox(
+        selected_chat_id = st.selectbox(
             "Current chat",
             options=chat_options,
-            format_func=lambda chat: chat[1],
+            format_func=chat_label,
             help="Queries search only the documents in the selected chat.",
             key="document_chat_picker",
         )
-        selected_chat_id, selected_chat_name = selected_chat
+        selected_chat_name = next(
+            (name for cid, name in all_chats if cid == selected_chat_id),
+            selected_chat_id,
+        )
         if selected_chat_id != active_chat_id:
             st.session_state.active_document_chat_id = selected_chat_id
             st.session_state.active_document_chat_name = selected_chat_name

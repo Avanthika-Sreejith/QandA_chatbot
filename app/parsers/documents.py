@@ -17,6 +17,23 @@ TABLE_ROWS_PER_SEGMENT = 20
 MIN_OCR_IMAGE_SIZE = (25, 12)  # ignore tiny icons/decorative marks
 STANDALONE_OCR_IMAGE_SIZE = (60, 12)  # ignore logos/borders; capture inline formula images
 MAX_OCR_IMAGES_PER_TABLE = 6
+VECTOR_GLYPH_MIN_SIZE = (4, 4)  # ignore bullets/decorative marks
+VECTOR_GLYPH_MAX_SIZE = (40, 40)  # ignore table borders / large fills
+VECTOR_CLUSTER_Y_TOL = 6.0  # treat glyphs on the same text line as one region
+VECTOR_OCR_PADDING = 2.0  # avoid clipping glyphs at region edges (standalone only)
+VECTOR_TABLE_OCR_PADDING = 0.0  # table grid lines corrupt OCR if included
+
+_OCR_ENGINE: Any = None
+
+
+def _get_ocr_engine() -> Any:
+    """Return a process-wide OCR engine, creating it once."""
+    global _OCR_ENGINE
+    if _OCR_ENGINE is None:
+        from rapidocr_onnxruntime import RapidOCR
+
+        _OCR_ENGINE = RapidOCR()
+    return _OCR_ENGINE
 
 
 def _looks_like_numbered_heading(text: str) -> bool:
@@ -153,6 +170,74 @@ def _image_overlaps_tables(image_rect: Any, table_boxes: list[Any]) -> bool:
     return False
 
 
+def _text_line_rects(page: Any) -> list[Any]:
+    """Bounding boxes of every text line on the page."""
+    rects: list[Any] = []
+    for block in page.get_text("dict").get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            bbox = line.get("bbox")
+            if bbox:
+                rects.append(fitz.Rect(bbox))
+    return rects
+
+
+def _vector_glyph_rects(
+    page: Any, table_boxes: list[Any], inside_table: bool, text_lines: list[Any]
+) -> list[Any]:
+    """Vector-drawn glyph rects that resemble formula characters.
+
+    PyMuPDF's ``get_image_info()`` only reports raster images, so formulas
+    drawn as vector paths are invisible to the existing OCR path. This collects
+    small, square-ish vector paths that are not covered by text (which would be
+    underlines, highlights, or bullets) and filters by whether they sit inside a
+    detected table region.
+    """
+    glyphs: list[Any] = []
+    for drawing in page.get_drawings():
+        rect = fitz.Rect(drawing.get("rect"))
+        if not (VECTOR_GLYPH_MIN_SIZE[0] <= rect.width <= VECTOR_GLYPH_MAX_SIZE[0]):
+            continue
+        if not (VECTOR_GLYPH_MIN_SIZE[1] <= rect.height <= VECTOR_GLYPH_MAX_SIZE[1]):
+            continue
+        # Skip glyphs mostly covered by a text line (bullets, underlines, etc.).
+        if rect.get_area() > 0:
+            covered = False
+            for line_rect in text_lines:
+                intersection = rect & line_rect
+                if not intersection.is_empty and intersection.get_area() / rect.get_area() > 0.6:
+                    covered = True
+                    break
+            if covered:
+                continue
+        is_in_table = _image_overlaps_tables(rect, table_boxes)
+        if is_in_table != inside_table:
+            continue
+        glyphs.append(rect)
+    return glyphs
+
+
+def _cluster_vector_glyphs(glyphs: list[Any]) -> list[Any]:
+    """Merge glyphs sharing a text line into one OCR region."""
+    clusters: list[Any] = []
+    for rect in sorted(glyphs, key=lambda r: (r.y0, r.x0)):
+        merged = False
+        for cluster in clusters:
+            if abs(rect.y0 - cluster.y0) <= VECTOR_CLUSTER_Y_TOL or abs(
+                rect.y1 - cluster.y1
+            ) <= VECTOR_CLUSTER_Y_TOL:
+                cluster.x0 = min(cluster.x0, rect.x0)
+                cluster.y0 = min(cluster.y0, rect.y0)
+                cluster.x1 = max(cluster.x1, rect.x1)
+                cluster.y1 = max(cluster.y1, rect.y1)
+                merged = True
+                break
+        if not merged:
+            clusters.append(fitz.Rect(rect))
+    return clusters
+
+
 def _is_section_name_line(text: str) -> bool:
     """True for short, punctuation-free, Title-Case lines (section titles)."""
     if not (2 <= len(text) <= 45):
@@ -190,7 +275,13 @@ def _drop_section_name_runs(lines: list[dict[str, Any]]) -> list[dict[str, Any]]
     return [line for line, keep_line in zip(lines, keep) if keep_line]
 
 
-def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int, int]) -> str | None:
+def _ocr_image(
+    page: Any,
+    image_rect: Any,
+    ocr_engine: Any,
+    min_size: tuple[int, int],
+    min_zoom: float = 0.0,
+) -> str | None:
     """OCR one rendered image region and return its recognised text.
 
     Renders the region at a zoom high enough for small inline equations and
@@ -200,12 +291,9 @@ def _ocr_image(page: Any, image_rect: Any, ocr_engine: Any, min_size: tuple[int,
     if image_rect.width < min_size[0] or image_rect.height < min_size[1]:
         return None
     try:
-        if ocr_engine is None:
-            from rapidocr_onnxruntime import RapidOCR
-
-            ocr_engine = RapidOCR()
+        ocr_engine = _get_ocr_engine()
         # Target a rendered text height of ~48px so tiny equations stay legible.
-        zoom = min(8, max(3, math.ceil(48 / max(image_rect.height, 1))))
+        zoom = max(min_zoom, min(8, max(3, math.ceil(48 / max(image_rect.height, 1)))))
         pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), clip=image_rect)
         # A named temp file keeps its handle open on Windows, which blocks the
         # writer and the OCR engine; write into a fresh temp directory instead.
@@ -243,6 +331,7 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
             image_infos = page.get_image_info()
             if not all_lines and not image_infos:
                 continue
+            text_line_rects = _text_line_rects(page)
 
             # Detect native tables first; index them as header-preserving row groups.
             table_boxes: list[fitz.Rect] = []
@@ -274,13 +363,39 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                             ocr_text = _ocr_image(page, image_rect, ocr_engine, MIN_OCR_IMAGE_SIZE)
                             if ocr_text:
                                 ocr_texts.append(ocr_text)
+                    # Formulas rendered as vector paths are invisible to
+                    # get_image_info(); OCR glyph clusters inside the table.
+                    table_glyphs = _vector_glyph_rects(
+                        page, [table_rect], inside_table=True, text_lines=text_line_rects
+                    )
+                    for cluster in _cluster_vector_glyphs(table_glyphs)[
+                        :MAX_OCR_IMAGES_PER_TABLE
+                    ]:
+                        padded = fitz.Rect(
+                            cluster.x0 - VECTOR_TABLE_OCR_PADDING,
+                            cluster.y0 - VECTOR_TABLE_OCR_PADDING,
+                            cluster.x1 + VECTOR_TABLE_OCR_PADDING,
+                            cluster.y1 + VECTOR_TABLE_OCR_PADDING,
+                        )
+                        cluster_zoom = max(
+                            3, math.ceil(48 / max(cluster.height, 1))
+                        )
+                        ocr_text = _ocr_image(
+                            page,
+                            padded,
+                            ocr_engine,
+                            VECTOR_GLYPH_MIN_SIZE,
+                            min_zoom=cluster_zoom,
+                        )
+                        if ocr_text:
+                            ocr_texts.append(ocr_text)
                     table_segments.extend(
                         _table_row_groups(
                             rows,
                             path=path,
                             source_type="pdf_table",
                             table_number=table_number,
-                            has_embedded_images=bool(intersecting),
+                            has_embedded_images=bool(intersecting or table_glyphs),
                             image_ocr=ocr_texts,
                             page=index,
                         )
@@ -296,6 +411,44 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                 if _image_overlaps_tables(image_rect, table_boxes):
                     continue
                 ocr_text = _ocr_image(page, image_rect, ocr_engine, STANDALONE_OCR_IMAGE_SIZE)
+                if not ocr_text:
+                    continue
+                standalone_count += 1
+                segments.append(
+                    ParsedSegment(
+                        f"[Image content]\n{ocr_text}",
+                        _base_metadata(path)
+                        | {
+                            "source_type": "pdf_image",
+                            "content_kind": "image",
+                            "page": index,
+                            "section": "Image content",
+                        },
+                    )
+                )
+
+            # Also OCR formulas drawn as vector paths (e.g. MathType/MathML
+            # output) that get_image_info() cannot see.
+            standalone_glyphs = _vector_glyph_rects(
+                page, table_boxes, inside_table=False, text_lines=text_line_rects
+            )
+            for cluster in _cluster_vector_glyphs(standalone_glyphs):
+                if standalone_count >= MAX_OCR_IMAGES_PER_TABLE:
+                    break
+                padded = fitz.Rect(
+                    cluster.x0 - VECTOR_OCR_PADDING,
+                    cluster.y0 - VECTOR_OCR_PADDING,
+                    cluster.x1 + VECTOR_OCR_PADDING,
+                    cluster.y1 + VECTOR_OCR_PADDING,
+                )
+                cluster_zoom = max(3, math.ceil(48 / max(cluster.height, 1)))
+                ocr_text = _ocr_image(
+                    page,
+                    padded,
+                    ocr_engine,
+                    VECTOR_GLYPH_MIN_SIZE,
+                    min_zoom=cluster_zoom,
+                )
                 if not ocr_text:
                     continue
                 standalone_count += 1

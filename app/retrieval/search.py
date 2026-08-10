@@ -115,11 +115,21 @@ def _fused_query(
 
 def _sequence_anchor(hit: Any) -> tuple[int, int]:
     """Rank likely procedure chunks above FAQ/reference noise."""
-    text = (_hit_payload(hit).get("text") or "").lower()
+    payload = _hit_payload(hit)
+    text = (payload.get("text") or "").lower()
+    section = str(payload.get("section") or "").lower()
     numbered_items = len(re.findall(r"(?:^|\s)\d+\.\s", text))
-    score = numbered_items * 10 + (5 if "step" in text else 0)
+    score = numbered_items * 10 + (5 if "step" in text or "step" in section else 0)
     if text.startswith(("explain ", "what is ", "describe ")):
         score -= 20
+    # Reference/bibliography entries are numbered AND carry a [web:NN] tag per
+    # entry, so they outrank real steps ("1. Start with all activities..." has
+    # no citation). Do not expand those as if they were a procedure.
+    web_tags = text.count("[web:")
+    if numbered_items >= 2 and web_tags >= numbered_items - 1:
+        score -= 200
+    if "reference" in section:
+        score -= 200
     return score, numbered_items
 
 
@@ -174,8 +184,13 @@ def _expand_sequence_context(
         points,
         key=lambda point: (_hit_payload(point).get("chunk_index", 0)),
     )
+    anchor_score = getattr(anchor, "score", None)
     seen_ids = {_hit_id(point) for point in siblings}
-    return siblings + [hit for hit in ranked if _hit_id(hit) not in seen_ids]
+    ranked_siblings = [
+        _with_score(point, anchor_score) if anchor_score is not None else point
+        for point in siblings
+    ]
+    return ranked_siblings + [hit for hit in ranked if _hit_id(hit) not in seen_ids]
 
 
 def search_documents(

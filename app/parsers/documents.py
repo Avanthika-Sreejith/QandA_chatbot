@@ -143,7 +143,7 @@ def _looks_like_pdf_heading(text: str, max_size: float, is_bold: bool, body_size
     # Short labels without trailing punctuation are safe to treat as headings;
     # definition lines such as "Normal time:" are excluded by their colon.
     title_case_label = (
-        2 <= len(words) <= 8
+        1 <= len(words) <= 8
         and text[0].isupper()
         and not any(char in text for char in ".,:;!?()")
     )
@@ -352,7 +352,12 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
     segments: list[ParsedSegment] = []
     with fitz.open(path) as document:
         for index, page in enumerate(document, start=1):
-            blocks = page.get_text("dict").get("blocks", [])
+            # sort=True reorders blocks into visual reading order. Some PDFs
+            # store heading blocks in a separate content stream that PyMuPDF
+            # returns *after* all body text, so without the sort every section
+            # on a page is mislabelled "Document body" and headings get no text
+            # under them.
+            blocks = page.get_text("dict", sort=True).get("blocks", [])
             all_lines = [
                 line
                 for block in blocks

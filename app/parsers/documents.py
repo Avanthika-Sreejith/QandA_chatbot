@@ -132,7 +132,16 @@ def _looks_like_pdf_heading(text: str, max_size: float, is_bold: bool, body_size
     if body_size <= 0:
         return is_bold and len(text) <= 80
     larger_font = max_size >= body_size + 1.5
-    return (larger_font and len(text) <= 80) or (is_bold and len(text) <= 60)
+    # Many study-note PDFs use bold, body-sized Title Case labels such as
+    # "Key concepts". Preserve them as headings even without a larger font so
+    # their terms are included with the following semantic chunk.
+    words = text.split()
+    title_case_label = (
+        2 <= len(words) <= 8
+        and text == text.title()
+        and not any(char in text for char in ".,:;!?()")
+    )
+    return (larger_font and len(text) <= 80) or (is_bold and len(text) <= 60) or title_case_label
 
 
 def _normalise_cells(row: list[str | None] | None) -> list[str]:
@@ -349,7 +358,6 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
             if table_finder is not None:
                 for table_number, table in enumerate(table_finder.tables, start=1):
                     table_rect = fitz.Rect(table.bbox)
-                    table_boxes.append(table_rect)
                     rows = [_normalise_cells(row) for row in (table.extract() or [])]
                     intersecting = [
                         info
@@ -394,17 +402,21 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                         )
                         if ocr_text:
                             ocr_texts.append(ocr_text)
-                    table_segments.extend(
-                        _table_row_groups(
-                            rows,
-                            path=path,
-                            source_type="pdf_table",
-                            table_number=table_number,
-                            has_embedded_images=bool(intersecting or table_glyphs),
-                            image_ocr=ocr_texts,
-                            page=index,
-                        )
+                    candidate_segments = _table_row_groups(
+                        rows,
+                        path=path,
+                        source_type="pdf_table",
+                        table_number=table_number,
+                        has_embedded_images=bool(intersecting or table_glyphs),
+                        image_ocr=ocr_texts,
+                        page=index,
                     )
+                    # A visual divider/list can be misidentified as a PDF
+                    # table. Only remove its text from the prose path when a
+                    # real, non-empty table chunk was produced.
+                    if candidate_segments:
+                        table_boxes.append(table_rect)
+                        table_segments.extend(candidate_segments)
 
             # OCR images that are not covered by any detected native table, such
             # as screenshot tables that find_tables cannot detect.
@@ -502,6 +514,12 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
             def flush() -> None:
                 text = " ".join(pending).strip()
                 if text:
+                    # Add the parent heading to the embed text. This lets a
+                    # query such as "key concepts in crashing" find the
+                    # definitions under that heading rather than only a later
+                    # broad summary of the topic.
+                    if current_section != "Document body":
+                        text = f"{current_section}\n{text}"
                     page_segments.append(
                         ParsedSegment(
                             text,

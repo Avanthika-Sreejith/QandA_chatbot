@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY requirements.txt .
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc git \
+    && apt-get install -y --no-install-recommends gcc git libglib2.0-0 libgl1 libxcb1 \
     && python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install --prefer-binary --retries 5 --timeout 120 -r requirements.txt \
     && apt-get purge -y --auto-remove gcc git \

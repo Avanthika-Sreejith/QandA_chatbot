@@ -1,0 +1,365 @@
+Project Management ­ Module 4 Notes
+
+Overview
+
+These notes cover the fourth and final module of Project Management: reducing project
+duration through crashing, project risk management, project evaluation, project progress and
+performance management, project closure and oversight, and an introduction to project
+management software. The notes are written for exam preparation with clear definitions,
+formulas, comparison tables, and likely exam questions.
+
+1. Reducing Project Duration
+
+Reducing project duration means shortening the total time required to complete a project. This
+becomes necessary due to client demands, contractual penalties, competitive pressure,
+strategic urgency, or schedule overruns.[web:51][web:50]
+
+Reasons for reducing project duration
+
+    Market or competitive pressure to launch earlier.[web:51]
+    Contractual deadlines with penalty clauses.[web:52]
+    Reallocation of resources to another project.[web:51]
+    Schedule recovery after delays.[web:50]
+    External factors such as regulatory or seasonal deadlines.[web:51]
+
+Options for reducing project duration
+
+    Adding more resources to critical activities.[web:52]
+    Outsourcing project activities to specialized parties.[web:52]
+    Working overtime or extending working shifts.[web:52]
+    Reducing project scope after consulting stakeholders.[web:52]
+    Phasing the project deliverables so parts are released earlier.[web:52]
+    Fast-tracking: overlapping phases or activities that were originally sequential.[web:63]
+
+2. Crashing Project Activities
+
+Project crashing is the process of shortening the project schedule duration for the least
+additional cost by adding extra resources to critical path activities.[web:50][web:53]
+Key concepts
+
+    Normal time: The standard duration estimated under normal conditions.[web:52]
+    Crash time: The minimum possible time to complete an activity after applying extra
+    resources.[web:52]
+    Normal cost: The cost of completing an activity in its normal time.[web:52]
+    Crash cost: The higher cost incurred when completing the activity in crash time.[web:52]
+    Crash cost per unit time: The additional cost for reducing one unit of duration.[web:53]
+
+Crash cost per unit time formula
+
+The activity with the smallest crash cost per unit of time on the critical path should be crashed
+first.[web:53]
+
+Steps in crashing a project
+
+  1. Start with all activities at normal time and normal cost.[web:52]
+  2. Find the critical path and total project duration.[web:52]
+  3. Calculate crash cost per unit of time for each critical activity.[web:53]
+  4. Select the critical activity with the lowest crash cost per unit.[web:53]
+  5. Crash that activity by one time unit and recalculate total cost and duration.[web:53]
+  6. Update the critical path (it may change after crashing).[web:53]
+  7. Repeat until target duration is reached or further crashing is not worthwhile.[web:50]
+
+    [web:53]
+
+Important rules for crashing
+
+    Only activities on the critical path can reduce overall project duration.[web:52][web:53]
+    If there are multiple critical paths, one activity from each must be crashed simultaneously.
+    [web:53]
+    Crashing beyond the crash time is not possible.[web:52]
+    Total project cost = direct cost + indirect cost; reduce total cost by finding the optimal crash
+    point.[web:52]
+
+Crashing vs Fast-Tracking
+
+ Basis                  Crashing                              Fast-Tracking
+Method  Add more resources [web:50][web:63]  Overlap sequential activities [web:63]
+Cost    Increases cost [web:52][web:53]      May increase risk but not necessarily cost [web:63]
+ Basis                  Crashing                                         Fast-Tracking
+Risk    Lower risk if resources are available [web:63]  Higher risk due to parallel work [web:63]
+Scope   Scope unchanged [web:52][web:63]                Scope unchanged [web:63]
+
+3. Project Risk Management
+
+Project risk management is the systematic process of identifying, analyzing, planning
+responses to, and controlling risks in order to protect project objectives from uncertainty.
+[web:54][web:59]
+
+What is risk?
+
+Risk is an uncertain event or condition that, if it occurs, has a positive or negative effect on
+project objectives including scope, schedule, cost, and quality. Risk can be a threat (negative) or
+an opportunity (positive).[web:54]
+
+Steps in project risk management
+
+Step 1: Risk Identification
+
+    Identify all potential risks that might affect the project.[web:54]
+    Tools: brainstorming, checklists, expert interviews, SWOT analysis, historical records.
+    [web:54][web:59]
+    Output: Risk Register -- a document listing all identified risks.[web:54]
+
+Step 2: Risk Analysis
+
+Qualitative risk analysis: Prioritize risks using probability and impact rating. Each risk is
+assessed for its likelihood and consequence on a scale (e.g., Low, Medium, High).[web:54]
+[web:59]
+
+Quantitative risk analysis: Use numerical tools to estimate the probability and financial impact
+of risks. Tools include Monte Carlo simulation, decision tree analysis, and sensitivity analysis.
+[web:54]
+
+Step 3: Risk Response Planning
+
+Develop strategies to reduce threats and enhance opportunities:[web:54][web:59]
+
+    Strategy        For Threats                           Meaning
+Avoid [web:54]     Yes           Change the plan to eliminate the risk entirely
+Transfer [web:54]  Yes           Shift the financial impact to a third party (insurance, contracts)
+Mitigate [web:54]  Yes           Reduce probability or impact
+    Strategy       For Threats                            Meaning
+Accept [web:54]   Yes            Acknowledge the risk and prepare a contingency
+Exploit [web:54]  Opportunities  Take advantage of positive risk
+
+Step 4: Risk Monitoring and Control
+
+    Track identified risks and identify new ones throughout the project.[web:54]
+    Conduct risk audits and review risk register periodically.[web:54]
+    Implement contingency plans when risks occur.[web:54]
+
+4. Project Evaluation
+
+Project evaluation is the systematic assessment of project objectives, processes, performance,
+and outcomes. It helps determine whether a project is achieving its intended goals and
+provides a basis for decision-making and improvement.[web:55][web:60]
+
+Types of evaluation
+
+    Pre-project evaluation: Assesses viability before the project starts.
+    Mid-project evaluation: Checks whether the project is on track during execution.
+    Post-project evaluation: Reviews outcomes after closure to assess impact and lessons.
+
+Criteria for evaluation
+
+    Achievement of scope and deliverables.
+    Adherence to schedule and cost baselines.
+    Quality of outputs and stakeholder satisfaction.[web:60]
+    Efficiency of resource use.
+    Risk management effectiveness.[web:60]
+
+5. Project Progress and Performance Management
+
+Project progress monitoring
+
+Progress monitoring tracks the actual status of work against the planned baseline. It answers
+questions like: Is the project on schedule? Is spending on track? Are deliverables being
+produced correctly?[web:60]
+Earned Value Management (EVM)
+
+EVM is the most widely used technique for measuring project performance. It integrates scope,
+time, and cost to provide an objective view of project health.[web:55][web:60]
+
+Key EVM terms and formulas
+
+          Term          Abbreviation                 Meaning                      Formula
+Planned Value           PV                                             Given in baseline plan [web:60]
+                                      Budgeted cost of work scheduled
+Earned Value            EV                                             % Complete × Budget [web:55]
+                                      Budgeted cost of work actually
+                                      performed                        From accounting records
+                                                                       [web:60]
+Actual Cost             AC            Actual cost incurred to date
+                                                                                          [web:60]
+Cost Variance           CV            Difference between EV and AC                       [web:60]
+                                      Difference between EV and PV                       [web:60]
+Schedule Variance       SV            Efficiency of cost use
+                                                                                         [web:60]
+Cost Performance Index  CPI           Efficiency of schedule use
+
+Schedule Performance    SPI
+Index
+
+Interpretation
+
+    CV > 0: Under budget; CV < 0: Over budget.[web:60]
+    SV > 0: Ahead of schedule; SV < 0: Behind schedule.[web:60]
+    CPI > 1: Good cost efficiency; CPI < 1: Poor cost efficiency.[web:60]
+    SPI > 1: Ahead of schedule; SPI < 1: Behind schedule.[web:60]
+
+Performance reporting
+
+    Regular performance reports compare actual work, cost, and time against the plan.
+    Reports help stakeholders stay informed and enable timely corrective action.[web:60]
+
+6. Project Closure and Oversight
+
+Project closure is the formal final phase in which all project activities are completed,
+deliverables are handed over, contracts are closed, resources are released, and project records
+are finalized and archived.[web:56][web:61]
+
+Why project closure is important
+
+    Ensures all deliverables are formally accepted by the client.[web:56]
+    Releases resources for other projects.[web:61]
+    Documents lessons learned for future projects.[web:56][web:61]
+    Reduces organizational risk from unresolved contracts or commitments.[web:56]
+    Provides a complete and auditable record of the project.[web:61]
+
+Steps in project closure
+
+  1. Verify scope: Confirm all deliverables have been completed and accepted.[web:61]
+  2. Transfer deliverables: Hand over project outputs to the client or operations team.[web:61]
+  3. Close contracts: Formally close all supplier and subcontractor agreements.[web:61]
+  4. Release resources: Reassign project team members, equipment, and materials.[web:61]
+  5. Document lessons learned: Record what went well, what went wrong, and how to improve.
+
+    [web:56][web:61]
+  6. Prepare close-out report: Summarize project performance including cost, schedule,
+
+    quality, and risk outcomes.[web:61]
+  7. Archive project records: Store documentation for future reference and audit.[web:56]
+
+    [web:61]
+  8. Celebrate and formally close: Hold a close-out meeting and officially announce project
+
+    completion.[web:61]
+
+Close-out report contents
+
+    Summary of project objectives and deliverables.[web:61]
+    Performance data on schedule, cost, and quality.[web:61]
+    Description of risks encountered and how they were handled.[web:61]
+    Lessons learned documentation.[web:61]
+    Final recommendations for related future projects.[web:61]
+
+Project oversight
+
+Project oversight means the ongoing review and governance of a project to ensure it remains
+aligned with organizational goals, complies with policies, and delivers its intended value.
+Oversight mechanisms include:
+
+    Steering committee reviews.
+    Independent project audits.
+    Phase gate reviews before proceeding to the next stage.
+    Portfolio-level monitoring of multiple projects.
+7. Introduction to Project Management Software
+
+Project management software provides digital tools that support planning, scheduling,
+resource management, communication, collaboration, cost tracking, and reporting for
+projects.[web:57][web:62]
+
+Why use project management software?
+
+    Automates scheduling and network diagram creation.[web:57]
+    Centralizes information and improves team collaboration.[web:62]
+    Tracks costs, time, and performance in real time.[web:57]
+    Generates Gantt charts, PERT/CPM charts, and progress reports automatically.[web:62]
+    Manages resource allocation and workload balancing.[web:57]
+
+Categories of project management software
+
+    Category                         Description                                       Example tools
+Desktop software   Installed on a local system, powerful for scheduling  MS Project [web:62]
+Cloud-based tools  Accessible online, supports team collaboration        Asana, Trello, monday.com [web:57][web:62]
+Enterprise tools   Full-featured, integrated with ERP/finance systems    Oracle Primavera, Jira [web:62]
+Open-source tools  Free and customizable                                 GanttProject, OpenProject [web:62]
+
+Popular project management tools
+
+Microsoft Project
+
+    Industry-standard software for scheduling and resource management.
+    Supports Gantt charts, critical path analysis, and EVM.
+    Widely used in construction, IT, and infrastructure projects.[web:62]
+
+Primavera P6 (Oracle)
+
+    Enterprise-grade software designed for large and complex projects.
+    Strongly used in engineering, construction, and government projects.
+    Supports multi-project planning and portfolio management.[web:62]
+
+Asana
+
+    Cloud-based, user-friendly collaboration and task management tool.
+    Suited for team coordination, task assignment, and progress tracking.[web:57][web:62]
+Trello
+
+    Visual kanban board tool for tracking task status and workflow.
+    Simple and easy to use; suited for small projects and agile teams.[web:62]
+
+Jira
+
+    Popular for software development and IT projects.
+    Supports agile, scrum, and kanban methodologies.[web:62]
+
+monday.com
+
+    Flexible cloud platform for project tracking, dashboards, and reporting.
+    Suitable for teams of various sizes.[web:57]
+
+Key features to look for in PM software
+
+    Task and activity scheduling.
+    Gantt chart and network diagram creation.
+    Resource allocation and workload management.
+    Budget and cost tracking.
+    Real-time progress reporting and dashboards.
+    Team communication and document sharing.
+    Risk log and issue tracking.
+
+Quick Revision Summary
+
+Crashing reduces project duration by adding resources to critical activities at extra cost.
+[web:52][web:53]
+
+Always crash the critical activity with the lowest crash cost per unit of time first.[web:53]
+
+Fast-tracking overlaps activities; crashing adds resources.[web:63]
+
+Risk management steps: Identify  Analyze  Plan response  Monitor and control.[web:54]
+[web:59]
+
+EVM integrates scope, cost, and time to measure project performance.[web:60]
+
+Key EVM formulas:       ,  ,                                         ,                       .
+
+[web:60]
+
+Project closure includes scope verification, deliverable transfer, contract closure, lessons
+learned, and archiving.[web:56][web:61]
+
+PM software ranges from desktop tools like MS Project to cloud platforms like Asana,
+Trello, and Jira.[web:57][web:62]
+Likely Exam Questions
+
+  1. What is project crashing? Explain the steps involved in crashing a project schedule.
+  2. Distinguish between crashing and fast-tracking.
+  3. Explain the process of project risk management.
+  4. Discuss Earned Value Management (EVM) with relevant formulas.
+  5. What is project evaluation? Explain its types and criteria.
+  6. Describe the process and importance of project closure.
+  7. Write a note on any two popular project management software tools.
+  8. Explain the time-cost trade-off with reference to crashing.
+
+References
+
+  1. PMI, "Performing crash analysis: alternative cost-schedule scenarios." [web:49]
+  2. ProjectManagers.org, "Crashing the Project Schedule: A Step-by-Step Guide." [web:50]
+  3. BITS Pilani, "Chapter 9: Reducing Project Duration (PDF)." [web:51]
+  4. MCRHRDI, "Crashing ­ Project Management Lecture Notes (PDF)." [web:52]
+  5. YouTube / Operations University, "Project Crashing Explained -- Critical Path Method
+
+    (CPM)." [web:53]
+  6. IndustrialAudit.com, "Risk Management and Risk Mitigation." [web:54]
+  7. DataGuard, "Understanding Risk Assessment Methodology." [web:59]
+  8. ProjectManagement.com, "What is the Earned Value (EV) of a Project?" [web:55]
+  9. PMI, "EVM and CPM: Evaluate Project Performance (Earned Schedule)." [web:60]
+10. PMI, "Importance of the Closing Process Group." [web:56]
+11. eCampus Ontario, "11.5 Lessons Learned ­ Essentials of Project Management." [web:61]
+12. project-management.com, "Top 10 Project Management Software for 2026." [web:57]
+13. PCMag, "The Best Project Management Software for 2026." [web:62]
+14. Project Management Academy, "PMP Exam Prep: Fast-Tracking vs Crash Schedule."
+
+    [web:63]
+

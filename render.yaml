@@ -21,3 +21,5 @@ services:
         sync: false
       - key: EMBEDDING_DEVICE
         value: cpu
+      - key: ENABLE_PDF_OCR
+        value: "false"

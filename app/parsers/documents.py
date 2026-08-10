@@ -11,6 +11,8 @@ import re
 import tempfile
 from zipfile import ZipFile
 
+from app.config import ENABLE_PDF_OCR
+
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm", ".txt"}
 TABLE_ROWS_PER_SEGMENT = 20
@@ -297,6 +299,11 @@ def _ocr_image(
     returns None when the image is too small, OCR fails, or the recognised text
     is too short to be meaningful (icons/logos).
     """
+    # RapidOCR/ONNX consumes more memory than a 512 MB Render instance can
+    # safely provide. Keep the main RAG path reliable unless OCR was
+    # deliberately enabled on a larger deployment.
+    if not ENABLE_PDF_OCR:
+        return None
     if image_rect.width < min_size[0] or image_rect.height < min_size[1]:
         return None
     try:

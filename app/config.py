@@ -34,3 +34,8 @@ BROAD_SEARCH_TOP_K = int(os.getenv("BROAD_SEARCH_TOP_K", "20"))
 # this fraction of the strongest file's best chunk. A file whose evidence is
 # only half as strong as the leader is likely noise, not a second source.
 SOURCE_SELECTION_RATIO = float(os.getenv("SOURCE_SELECTION_RATIO", "0.6"))
+
+# RapidOCR loads ONNX models into process memory. Keep it disabled on the
+# 512 MB Render plan; enable it only on a larger instance or when using a
+# dedicated OCR deployment.
+ENABLE_PDF_OCR = os.getenv("ENABLE_PDF_OCR", "false").strip().lower() in {"1", "true", "yes"}

@@ -229,11 +229,17 @@ def search_documents(
         return []
 
     candidates: list[tuple[float, Any]] = []
+    # Phase 2 must pull a wider pool than the final top_k: RRF only fuses
+    # points that appear in a single vector's top-limit, so a small limit can
+    # drop an on-topic chunk that ranks ~9th in one method but is fused near
+    # the top. Keep the larger pool so those chunks survive, then slice to
+    # top_k below.
+    candidate_limit = max(top_k * 3, BROAD_SEARCH_TOP_K)
     for file_path in selected_files:
         file_conditions = scope_conditions + [
             FieldCondition(key="file_path", match=MatchValue(value=file_path))
         ]
-        candidates.extend(_fused_query(query_vector, query_sparse, file_conditions, top_k))
+        candidates.extend(_fused_query(query_vector, query_sparse, file_conditions, candidate_limit))
 
     candidates.sort(key=lambda item: item[0], reverse=True)
 

@@ -147,7 +147,13 @@ def _looks_like_pdf_heading(text: str, max_size: float, is_bold: bool, body_size
         and text[0].isupper()
         and not any(char in text for char in ".,:;!?()")
     )
-    return (larger_font and len(text) <= 80) or (is_bold and len(text) <= 60) or title_case_label
+    numbered_label = bool(re.fullmatch(r"\d+(?:\.\d+)*\.?\s+[A-Z][^.!?]{0,100}", text))
+    return (
+        (larger_font and len(text) <= 80)
+        or (is_bold and len(text) <= 60)
+        or title_case_label
+        or numbered_label
+    )
 
 
 def _normalise_cells(row: list[str | None] | None) -> list[str]:

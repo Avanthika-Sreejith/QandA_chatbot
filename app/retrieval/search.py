@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from qdrant_client.models import (
@@ -15,6 +16,9 @@ from qdrant_client.models import (
 from app.config import BROAD_SEARCH_TOP_K, RRF_K, SEARCH_RRF_THRESHOLD, SOURCE_SELECTION_RATIO
 from app.embeddings import get_dense_embeddings, get_sparse_embeddings
 from app.retrieval.collection import DENSE_VECTOR_NAME, QDRANT_COLLECTION, SPARSE_VECTOR_NAME, get_client
+
+
+_SEQUENCE_QUERY = re.compile(r"\b(steps?|process|procedure|sequence|stages?|how\s+to)\b", re.IGNORECASE)
 
 
 def _scope_conditions(
@@ -109,6 +113,71 @@ def _fused_query(
     return _fuse_rrf([dense_hits, sparse_hits])
 
 
+def _sequence_anchor(hit: Any) -> tuple[int, int]:
+    """Rank likely procedure chunks above FAQ/reference noise."""
+    text = (_hit_payload(hit).get("text") or "").lower()
+    numbered_items = len(re.findall(r"(?:^|\s)\d+\.\s", text))
+    score = numbered_items * 10 + (5 if "step" in text else 0)
+    if text.startswith(("explain ", "what is ", "describe ")):
+        score -= 20
+    return score, numbered_items
+
+
+def _expand_sequence_context(
+    ranked: list[Any],
+    scope_conditions: list[FieldCondition],
+) -> list[Any]:
+    """Bring the full neighbouring sequence into context for ordered questions.
+
+    A semantic search can rank step 2 above step 1. Once a likely numbered
+    procedure chunk is found, scroll its source segment and place all sibling
+    chunks first in their original order so the answer model sees step 1..N.
+    """
+    eligible = [
+        hit
+        for hit in ranked
+        if _hit_payload(hit).get("chunk_count", 1) > 1
+        and _hit_payload(hit).get("source_segment") is not None
+    ]
+    if not eligible:
+        return ranked
+    anchor = max(eligible, key=_sequence_anchor)
+    if _sequence_anchor(anchor)[0] <= 0:
+        return ranked
+
+    payload = _hit_payload(anchor)
+    file_path = payload.get("file_path")
+    source_segment = payload.get("source_segment")
+    if not file_path:
+        return ranked
+    sibling_filter = Filter(
+        must=scope_conditions
+        + [
+            FieldCondition(key="file_path", match=MatchValue(value=file_path)),
+            FieldCondition(key="source_segment", match=MatchValue(value=source_segment)),
+        ]
+    )
+    try:
+        points, _ = get_client().scroll(
+            collection_name=QDRANT_COLLECTION,
+            scroll_filter=sibling_filter,
+            limit=100,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception:
+        # Search still works if a legacy collection has not yet created the
+        # source_segment payload index.
+        return ranked
+
+    siblings = sorted(
+        points,
+        key=lambda point: (_hit_payload(point).get("chunk_index", 0)),
+    )
+    seen_ids = {_hit_id(point) for point in siblings}
+    return siblings + [hit for hit in ranked if _hit_id(hit) not in seen_ids]
+
+
 def search_documents(
     query: str,
     top_k: int = 8,
@@ -178,4 +247,6 @@ def search_documents(
             continue
         seen_texts.add(text)
         ranked.append(hit)
+    if _SEQUENCE_QUERY.search(query):
+        ranked = _expand_sequence_context(ranked, scope_conditions)
     return ranked[:top_k]

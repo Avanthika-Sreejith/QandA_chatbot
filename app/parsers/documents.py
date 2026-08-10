@@ -536,12 +536,6 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
             def flush() -> None:
                 text = " ".join(pending).strip()
                 if text:
-                    # Add the parent heading to the embed text. This lets a
-                    # query such as "key concepts in crashing" find the
-                    # definitions under that heading rather than only a later
-                    # broad summary of the topic.
-                    if current_section != "Document body":
-                        text = f"{current_section}\n{text}"
                     page_segments.append(
                         ParsedSegment(
                             text,

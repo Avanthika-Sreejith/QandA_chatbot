@@ -39,9 +39,17 @@ _SENTENCE_BOUNDARY = re.compile(
 # chunk's embedding and pushing it down the retrieval ranking.
 _NUMBERED_ITEM_START = re.compile(r"^\d+\.\s+\S")
 
+# A glossary line such as "Normal time: The standard duration..." A run of
+# these (e.g. the five crash-cost definitions) must stay in ONE chunk, or a
+# query asking for "key concepts" retrieves only half of the list.
+_DEFINITION_ITEM = re.compile(r"^[A-Z][A-Za-z ]+:\s")
+
 _PAGE_FOOTER = re.compile(r"(?i)^(?:page\s+)?\d+\s*(?:[-–/of]*\s*\d+)?\.?\s*$")
 _COURSE_OUTCOME_TAG = re.compile(r"^[cC][oO]?\d+\s*\(\s*\d+\s*\)\s*$")
 _DIAGRAM_LABELS = {"START", "END", "STOP"}
+# A chunk that only contains citation tags such as "[web:52]" carries no
+# retrievable content but still pollutes dense/BM25 rankings ("web", "60").
+_CITATION_ONLY = re.compile(r"^(\[\s*[wW][eE][bB]\s*:\s*\d+\s*\]\s*)+$")
 
 
 def _is_junk(text: str) -> bool:
@@ -59,6 +67,8 @@ def _is_junk(text: str) -> bool:
         return True
     if len(stripped) <= 12 and _PAGE_FOOTER.fullmatch(stripped):
         return True
+    if _CITATION_ONLY.fullmatch(stripped):
+        return True
     if _COURSE_OUTCOME_TAG.fullmatch(stripped):
         return True
     if stripped in _DIAGRAM_LABELS and not any(char in stripped for char in ".!?;:,"):
@@ -68,7 +78,23 @@ def _is_junk(text: str) -> bool:
 
 def _split_sentences(text: str) -> list[str]:
     """Split text into useful semantic candidates without discarding content."""
-    return [part.strip() for part in _SENTENCE_BOUNDARY.split(text) if part.strip()]
+    parts = [part.strip() for part in _SENTENCE_BOUNDARY.split(text) if part.strip()]
+    sentences: list[str] = []
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if i + 1 < len(parts) and re.fullmatch(r"\d+\.", part):
+            # "1." was cut from "1. Start with..." by the period rule; re-attach
+            # it so the numbered-item hard split sees a complete marker.
+            sentences.append(f"{part} {parts[i + 1]}")
+            i += 2
+        elif _CITATION_ONLY.fullmatch(part):
+            # A trailing "[web:53]" carries no meaning on its own.
+            i += 1
+        else:
+            sentences.append(part)
+            i += 1
+    return sentences
 
 
 def _cosine(left: list[float], right: list[float]) -> float:
@@ -107,9 +133,16 @@ def _semantic_chunks(text: str) -> list[str]:
         hard_split = (
             len(current_sentences) > 0 and bool(_NUMBERED_ITEM_START.match(sentence))
         )
+        # Two consecutive glossary lines share one topic; forcing a split
+        # between "Normal time: ..." and "Crash time: ..." breaks the list so
+        # retrieval only ever surfaces half of it.
+        hard_join = bool(_DEFINITION_ITEM.match(sentence)) and bool(
+            _DEFINITION_ITEM.match(current_sentences[-1])
+        )
         should_split = (
             len(current_sentences) >= SEMANTIC_MIN_SENTENCES
             and similarity < SEMANTIC_SIMILARITY_THRESHOLD
+            and not hard_join
         )
         must_split_for_size = candidate_length > SEMANTIC_MAX_CHARACTERS
 
@@ -143,9 +176,6 @@ def chunk_segments(segments: Iterable[ParsedSegment]) -> list[ChunkedSegment]:
             method = content_kind
         else:
             text = segment.text
-            section = str(segment.metadata.get("section") or "").strip()
-            if section and section != "Document body" and not text.startswith(section):
-                text = f"{section}\n{text}"
             chunks = _semantic_chunks(text)
             method = "semantic"
 

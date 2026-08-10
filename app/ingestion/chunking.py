@@ -24,7 +24,20 @@ class ChunkedSegment:
     metadata: dict[str, Any]
 
 
-_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+|(?<=\n)\s*(?=\S)")
+# Split after sentence-ending punctuation even when a citation tag such as
+# "[web:52]" sits between the period and the next word. Otherwise an entire
+# definition list plus its numbered steps becomes one un-splittable sentence.
+_SENTENCE_BOUNDARY = re.compile(
+    r"(?<=[.!?])\s+"
+    r"|(?<=[.!?])\[web:\d+\]\s*"
+    r"|(?<=\n)\s*(?=\S)"
+)
+
+# A numbered list item ("1. Start with all activities...") always starts a new
+# chunk. Without this, semantic chunking glues numbered procedure steps onto
+# the preceding definition list (all same topic), diluting the definition
+# chunk's embedding and pushing it down the retrieval ranking.
+_NUMBERED_ITEM_START = re.compile(r"^\d+\.\s+\S")
 
 _PAGE_FOOTER = re.compile(r"(?i)^(?:page\s+)?\d+\s*(?:[-–/of]*\s*\d+)?\.?\s*$")
 _COURSE_OUTCOME_TAG = re.compile(r"^[cC][oO]?\d+\s*\(\s*\d+\s*\)\s*$")
@@ -91,13 +104,16 @@ def _semantic_chunks(text: str) -> list[str]:
     for sentence, vector in zip(sentences[1:], sentence_vectors[1:], strict=True):
         candidate_length = len(" ".join(current_sentences)) + len(sentence) + 1
         similarity = _cosine(_mean_vector(current_vectors), vector)
+        hard_split = (
+            len(current_sentences) > 0 and bool(_NUMBERED_ITEM_START.match(sentence))
+        )
         should_split = (
             len(current_sentences) >= SEMANTIC_MIN_SENTENCES
             and similarity < SEMANTIC_SIMILARITY_THRESHOLD
         )
         must_split_for_size = candidate_length > SEMANTIC_MAX_CHARACTERS
 
-        if should_split or must_split_for_size:
+        if hard_split or should_split or must_split_for_size:
             chunks.append(" ".join(current_sentences))
             current_sentences = [sentence]
             current_vectors = [vector]

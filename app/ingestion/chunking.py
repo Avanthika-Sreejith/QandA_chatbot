@@ -111,15 +111,26 @@ def _semantic_chunks(text: str) -> list[str]:
 
 
 def chunk_segments(segments: Iterable[ParsedSegment]) -> list[ChunkedSegment]:
-    """Create semantic chunks for prose and preserve table row groups as units."""
+    """Create semantic chunks for prose and preserve table row groups as units.
+
+    Headings are included with their following section text, not independently
+    indexed. This prevents a following heading from being returned as an item
+    in the preceding list or procedure.
+    """
     output: list[ChunkedSegment] = []
     for source_index, segment in enumerate(segments):
         content_kind = segment.metadata.get("content_kind", "prose")
-        if content_kind in ("table", "heading", "image"):
+        if content_kind == "heading":
+            continue
+        if content_kind in ("table", "image"):
             chunks = [segment.text]
             method = content_kind
         else:
-            chunks = _semantic_chunks(segment.text)
+            text = segment.text
+            section = str(segment.metadata.get("section") or "").strip()
+            if section and section != "Document body" and not text.startswith(section):
+                text = f"{section}\n{text}"
+            chunks = _semantic_chunks(text)
             method = "semantic"
 
         for chunk_index, text in enumerate(chunks):

@@ -138,9 +138,13 @@ def _looks_like_pdf_heading(text: str, max_size: float, is_bold: bool, body_size
     # "Key concepts". Preserve them as headings even without a larger font so
     # their terms are included with the following semantic chunk.
     words = text.split()
+    # PDF exports often capitalise only the first word of a subsection label
+    # (for example, "Key concepts"), so str.title() is too strict here.
+    # Short labels without trailing punctuation are safe to treat as headings;
+    # definition lines such as "Normal time:" are excluded by their colon.
     title_case_label = (
         2 <= len(words) <= 8
-        and text == text.title()
+        and text[0].isupper()
         and not any(char in text for char in ".,:;!?()")
     )
     return (larger_font and len(text) <= 80) or (is_bold and len(text) <= 60) or title_case_label

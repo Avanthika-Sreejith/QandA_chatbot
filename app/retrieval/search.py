@@ -221,6 +221,15 @@ def search_documents(
     )
     scope_conditions = _scope_conditions(document_chat_id, file_paths)
 
+    # A fresh/legacy deployment may not have created the vector collection yet.
+    # Structured (tree) chats must keep answering even when Qdrant has no points,
+    # so degrade to an empty hybrid result instead of failing the whole search.
+    try:
+        if not get_client().collection_exists(QDRANT_COLLECTION):
+            return []
+    except Exception:
+        return []
+
     broad_fused = _fused_query(query_vector, query_sparse, scope_conditions, BROAD_SEARCH_TOP_K)
 
     best_scores: dict[str, float] = {}

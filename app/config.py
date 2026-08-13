@@ -39,3 +39,11 @@ SOURCE_SELECTION_RATIO = float(os.getenv("SOURCE_SELECTION_RATIO", "0.6"))
 # 512 MB Render plan; enable it only on a larger instance or when using a
 # dedicated OCR deployment.
 ENABLE_PDF_OCR = os.getenv("ENABLE_PDF_OCR", "false").strip().lower() in {"1", "true", "yes"}
+
+# Documents with reliable headings use a vectorless, PageIndex-style section
+# tree. Other files continue through the established Qdrant hybrid pipeline.
+# Defaults to off so a local run stays on the proven hybrid route; production
+# opts in explicitly via render.yaml.
+ENABLE_STRUCTURED_RETRIEVAL = os.getenv("ENABLE_STRUCTURED_RETRIEVAL", "false").strip().lower() in {"1", "true", "yes"}
+STRUCTURE_SCORE_THRESHOLD = int(os.getenv("STRUCTURE_SCORE_THRESHOLD", "8"))
+STRUCTURED_MAX_SECTIONS = int(os.getenv("STRUCTURED_MAX_SECTIONS", "6"))

@@ -23,3 +23,9 @@ services:
         value: cpu
       - key: ENABLE_PDF_OCR
         value: "false"
+      - key: ENABLE_STRUCTURED_RETRIEVAL
+        value: "true"
+      - key: STRUCTURE_SCORE_THRESHOLD
+        value: "8"
+      - key: STRUCTURED_MAX_SECTIONS
+        value: "6"

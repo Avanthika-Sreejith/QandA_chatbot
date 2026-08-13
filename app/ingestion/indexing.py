@@ -6,13 +6,15 @@ from pathlib import Path
 from typing import Callable, Iterable
 from uuid import NAMESPACE_URL, uuid5
 
-from qdrant_client.models import PointStruct, SparseVector
+from qdrant_client.models import FieldCondition, Filter, FilterSelector, MatchValue, PointStruct, SparseVector
 
 from app.config import DENSE_VECTOR_NAME, DENSE_VECTOR_SIZE, SPARSE_VECTOR_NAME
 from app.embeddings import get_dense_embeddings, get_sparse_embeddings
 from app.ingestion.chunking import ChunkedSegment, chunk_segments
 from app.parsers import SUPPORTED_EXTENSIONS, parse_document
 from app.retrieval.collection import QDRANT_COLLECTION, get_client, ensure_collection
+from app.retrieval.structured import assess_document_structure, build_section_tree
+from app.database import upsert_structured_document_index, delete_structured_document_index_by_name
 
 
 def _make_point_id(chunk: ChunkedSegment, document_chat_id: str | None = None) -> str:
@@ -24,6 +26,36 @@ def _make_point_id(chunk: ChunkedSegment, document_chat_id: str | None = None) -
 ProgressCallback = Callable[[str, int, int], None]
 
 _DEFAULT_SECTION = "Document body"
+
+
+def _delete_stale_points(file_name: str, document_chat_id: str) -> None:
+    """Remove a previously indexed version of a file before re-ingesting it.
+
+    Uploads are saved under a fresh random path each time, so the point IDs for
+    an older upload of the same file never collide with the new ones. Without
+    this cleanup, re-uploading a document would leave its old chunks searchable
+    alongside the new ones.
+    """
+    if not document_chat_id:
+        return
+    try:
+        if not get_client().collection_exists(QDRANT_COLLECTION):
+            return
+        get_client().delete(
+            collection_name=QDRANT_COLLECTION,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(key="document_chat_id", match=MatchValue(value=document_chat_id)),
+                        FieldCondition(key="file_name", match=MatchValue(value=file_name)),
+                    ]
+                )
+            ),
+            wait=True,
+        )
+    except Exception:
+        # A legacy deployment without the payload index should never block ingest.
+        return
 
 
 def _embedding_text(chunk: ChunkedSegment) -> str:
@@ -70,7 +102,7 @@ def index_chunks(
                 raise ValueError(
                     f"Embedding API returned {len(dense_vector)} dimensions; expected {DENSE_VECTOR_SIZE}."
                 )
-            payload = {"text": chunk.text, **chunk.metadata}
+            payload = {"text": chunk.text, "retrieval_mode": "hybrid_vector", **chunk.metadata}
             if document_chat_id:
                 payload["document_chat_id"] = document_chat_id
                 payload["document_chat_name"] = document_chat_name or "Untitled chat"
@@ -108,28 +140,59 @@ def ingest_files(
     if not paths:
         return 0, 0, []
 
-    ensure_collection()
     parsed_segments = []
     skipped: list[str] = []
+    structured_units = 0
     for number, path in enumerate(paths, start=1):
         if progress_callback:
             progress_callback(f"Parsing {path.name} ({number} of {len(paths)})…", number - 1, len(paths))
-        before = len(parsed_segments)
-        parsed_segments.extend(parse_document(path))
-        if len(parsed_segments) == before:
+        # Re-upload cleanup first: any older hybrid chunks or structured tree
+        # for the same file name in this chat are stale once we re-ingest.
+        delete_structured_document_index_by_name(document_chat_id, path.name)
+        _delete_stale_points(path.name, document_chat_id)
+        file_segments = parse_document(path)
+        if not file_segments:
             skipped.append(path.name)
+            continue
+
+        assessment = assess_document_structure(path, file_segments)
+        if assessment.is_structured and document_chat_id:
+            tree = build_section_tree(path, file_segments, assessment)
+            try:
+                upsert_structured_document_index(
+                    document_chat_id,
+                    str(path.resolve()),
+                    path.name,
+                    assessment.score,
+                    tree,
+                )
+                structured_units += len(tree["nodes"])
+                if progress_callback:
+                    progress_callback(
+                        f"Built vectorless section tree for {path.name} ({assessment.score}/structure score)",
+                        number,
+                        len(paths),
+                    )
+                continue
+            except Exception:
+                # An older Supabase schema should never stop the working
+                # hybrid pipeline; it is a safe fallback until migration.
+                pass
+        parsed_segments.extend(file_segments)
     if progress_callback:
         progress_callback(f"Chunking {len(parsed_segments)} parsed segment(s)…", len(paths), len(paths))
     chunks = chunk_segments(parsed_segments)
     if progress_callback:
         progress_callback(f"Created {len(chunks)} chunk(s). Preparing embeddings…", 0, 1)
+    if chunks:
+        ensure_collection()
     indexed = index_chunks(
         chunks,
         progress_callback=progress_callback,
         document_chat_id=document_chat_id,
         document_chat_name=document_chat_name,
     )
-    return len(parsed_segments), indexed, skipped
+    return len(parsed_segments), indexed + structured_units, skipped
 
 
 def ingest_file(file_path: str | Path) -> tuple[int, int, list[str]]:

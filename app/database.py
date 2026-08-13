@@ -59,6 +59,69 @@ def delete_chat(chat_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# structured_document_indexes table
+# ---------------------------------------------------------------------------
+
+def upsert_structured_document_index(
+    chat_id: str,
+    file_path: str,
+    file_name: str,
+    structure_score: int,
+    tree: dict[str, Any],
+) -> None:
+    """Persist a vectorless section/page tree for one structured document."""
+    client = get_supabase_client()
+    client.table("structured_document_indexes").upsert(
+        {
+            "chat_id": chat_id,
+            "file_path": file_path,
+            "file_name": file_name,
+            "structure_score": structure_score,
+            "tree": tree,
+        },
+        on_conflict="chat_id,file_path",
+    ).execute()
+
+
+def get_structured_document_indexes(chat_id: str) -> list[dict[str, Any]]:
+    """Return vectorless trees for one chat without breaking older schemas."""
+    try:
+        response = (
+            get_supabase_client()
+            .table("structured_document_indexes")
+            .select("file_path, file_name, structure_score, tree")
+            .eq("chat_id", chat_id)
+            .execute()
+        )
+        return list(response.data or [])
+    except Exception:
+        return []
+
+
+def delete_structured_document_indexes(chat_id: str) -> None:
+    """Remove vectorless trees; the installed schema also cascades on chat delete."""
+    try:
+        get_supabase_client().table("structured_document_indexes").delete().eq("chat_id", chat_id).execute()
+    except Exception:
+        return
+
+
+def delete_structured_document_index_by_name(chat_id: str, file_name: str) -> None:
+    """Drop a stale tree for one file so a re-upload cannot leave old nodes behind."""
+    try:
+        (
+            get_supabase_client()
+            .table("structured_document_indexes")
+            .delete()
+            .eq("chat_id", chat_id)
+            .eq("file_name", file_name)
+            .execute()
+        )
+    except Exception:
+        return
+
+
+# ---------------------------------------------------------------------------
 # chat_messages table
 # ---------------------------------------------------------------------------
 

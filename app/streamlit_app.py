@@ -29,6 +29,8 @@ from app.database import (
     append_message,
     clear_messages,
     delete_chat,
+    delete_structured_document_indexes,
+    get_structured_document_indexes,
 )
 
 
@@ -39,53 +41,14 @@ def get_document_chats() -> dict[str, str]:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def get_chat_files(document_chat_id: str) -> list[str]:
-    """Return every unique file stored in the selected document chat."""
+def get_chat_files(document_chat_id: str) -> list[dict[str, str]]:
+    """Return indexed files and the retrieval route selected for each one."""
     try:
         client = get_client()
-        if not client.collection_exists(QDRANT_COLLECTION):
-            return []
-
-        files: set[str] = set()
-        offset = None
-        chat_filter = Filter(
-            must=[
-                FieldCondition(
-                    key="document_chat_id",
-                    match=MatchValue(value=document_chat_id),
-                )
-            ]
-        )
-        while True:
-            points, offset = client.scroll(
-                collection_name=QDRANT_COLLECTION,
-                scroll_filter=chat_filter,
-                limit=1000,
-                offset=offset,
-                with_payload=["file_name", "file_path"],
-                with_vectors=False,
-            )
-            for point in points:
-                payload = getattr(point, "payload", {}) or {}
-                source_path = payload.get("file_path") or payload.get("file_name")
-                if source_path:
-                    files.add(str(source_path))
-            if offset is None:
-                break
-        return sorted(files, key=str.casefold)
-    except Exception:
-        return []
-
-
-def delete_chat_documents(document_chat_id: str) -> None:
-    """Permanently remove all indexed chunks belonging to one document chat."""
-    client = get_client()
-    if not client.collection_exists(QDRANT_COLLECTION):
-        return
-    client.delete(
-        collection_name=QDRANT_COLLECTION,
-        points_selector=FilterSelector(
-            filter=Filter(
+        files: dict[str, dict[str, str]] = {}
+        if client.collection_exists(QDRANT_COLLECTION):
+            offset = None
+            chat_filter = Filter(
                 must=[
                     FieldCondition(
                         key="document_chat_id",
@@ -93,9 +56,53 @@ def delete_chat_documents(document_chat_id: str) -> None:
                     )
                 ]
             )
-        ),
-        wait=True,
-    )
+            while True:
+                points, offset = client.scroll(
+                    collection_name=QDRANT_COLLECTION,
+                    scroll_filter=chat_filter,
+                    limit=1000,
+                    offset=offset,
+                    with_payload=["file_name", "file_path", "retrieval_mode"],
+                    with_vectors=False,
+                )
+                for point in points:
+                    payload = getattr(point, "payload", {}) or {}
+                    source_path = payload.get("file_path") or payload.get("file_name")
+                    if source_path:
+                        files[str(source_path)] = {
+                            "path": str(source_path),
+                            "mode": payload.get("retrieval_mode", "hybrid_vector"),
+                        }
+                if offset is None:
+                    break
+        for record in get_structured_document_indexes(document_chat_id):
+            source_path = str(record.get("file_path") or record.get("file_name") or "")
+            if source_path:
+                files[source_path] = {"path": source_path, "mode": "vectorless_structured_tree"}
+        return sorted(files.values(), key=lambda item: item["path"].casefold())
+    except Exception:
+        return []
+
+
+def delete_chat_documents(document_chat_id: str) -> None:
+    """Permanently remove all indexed chunks belonging to one document chat."""
+    client = get_client()
+    if client.collection_exists(QDRANT_COLLECTION):
+        client.delete(
+            collection_name=QDRANT_COLLECTION,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="document_chat_id",
+                            match=MatchValue(value=document_chat_id),
+                        )
+                    ]
+                )
+            ),
+            wait=True,
+        )
+    delete_structured_document_indexes(document_chat_id)
 
 
 UPLOAD_DIRECTORY = Path("work/uploads")
@@ -124,7 +131,7 @@ def format_citation(result: dict[str, Any]) -> str:
     source_type = payload.get("source_type", "")
     details: list[str] = []
 
-    if source_type == "pdf" and payload.get("page"):
+    if source_type in {"pdf", "structured_document"} and payload.get("page"):
         details.append(f"page {payload['page']}")
     if payload.get("section"):
         details.append(f"Section: {payload['section']}")
@@ -141,6 +148,36 @@ def format_citation(result: dict[str, Any]) -> str:
 
     suffix = ", ".join(details)
     return f"{file_name} — {suffix}" if suffix else file_name
+
+
+def _normalise_text(text: str) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _merge_retrieval_hits(
+    structured_hits: list[Any],
+    hybrid_hits: list[Any],
+    top_k: int = 8,
+) -> list[Any]:
+    """Combine exact section-tree hits with hybrid vector hits for one chat.
+
+    The structured route returns precise, heading-linked sections, while the
+    hybrid route may be the only place a non-structured file (for example a
+    DOCX) exists. Both are returned so a mixed chat never drops one of its
+    sources, and duplicate text across the two routes is removed.
+    """
+    merged: list[Any] = []
+    seen_texts: set[str] = set()
+    for hit in [*structured_hits, *hybrid_hits]:
+        payload = hit.get("payload", {}) if isinstance(hit, dict) else getattr(hit, "payload", None) or {}
+        text = (payload.get("text") or "").strip()
+        if not text or _normalise_text(text) in seen_texts:
+            continue
+        seen_texts.add(_normalise_text(text))
+        merged.append(hit)
+        if len(merged) >= top_k:
+            break
+    return merged
 
 
 MAX_ZIP_FILES = 1_000
@@ -333,8 +370,10 @@ def main() -> None:
     if chat_files:
         st.success(f"{len(chat_files)} file(s) are already indexed for this chat.")
         with st.expander("Show indexed files"):
-            for file_path in chat_files:
-                st.write(f"• {file_path}")
+            for file_info in chat_files:
+                mode = file_info["mode"]
+                label = "Vectorless structured tree" if mode == "vectorless_structured_tree" else "Hybrid vector search"
+                st.write(f"{Path(file_info['path']).name} — {label}")
     else:
         st.info("No files are indexed in this chat yet. Add files or a folder below.")
 
@@ -362,6 +401,9 @@ def main() -> None:
                 active_chat_name = title_for_uploads(uploads)
                 st.session_state.active_document_chat_name = active_chat_name
 
+            # The structured-tree table references document_chats, so persist
+            # a new chat before its first PageIndex-style tree is saved.
+            upsert_chat(active_chat_id, active_chat_name)
             saved_paths = [save_upload(uploaded) for uploaded in uploads]
             total_segments, total_chunks, skipped = ingest_files(
                 saved_paths,
@@ -380,7 +422,7 @@ def main() -> None:
                 )
             else:
                 notice = ""
-            message = f"{notice}Indexed {len(uploads) - len(skipped)} file(s): {total_segments} segments and {total_chunks} chunks."
+            message = f"{notice}Indexed {len(uploads) - len(skipped)} file(s): {total_segments} segments and {total_chunks} retrieval units."
             st.session_state.last_indexed_info = message
             st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not total_chunks else "info")
             st.session_state.upload_widget_version += 1
@@ -415,6 +457,7 @@ def main() -> None:
                 active_chat_name = Path(zip_upload.name).stem or "Indexed folder"
                 st.session_state.active_document_chat_name = active_chat_name
 
+            upsert_chat(active_chat_id, active_chat_name)
             total_segments, total_chunks, skipped = ingest_files(
                 extracted_paths,
                 progress_callback=update_zip_progress,
@@ -431,7 +474,7 @@ def main() -> None:
                 notice = f"No text could be extracted from: {', '.join(skipped)}.\n\n"
             st.session_state.last_indexed_info = (
                 f"{notice}Indexed {indexed_files} file(s) from {zip_upload.name}: "
-                f"{total_segments} segments and {total_chunks} chunks."
+                f"{total_segments} segments and {total_chunks} retrieval units."
             )
             st.session_state.last_indexed_kind = "warning" if skipped else ("error" if not total_chunks else "info")
             st.session_state.zip_upload_widget_version += 1
@@ -515,11 +558,17 @@ def main() -> None:
         st.session_state.search_error = None
         with st.spinner("Searching and generating answer…"):
             try:
-                # Import the embedding stack only when the user sends a question.
+                # Fuse the exact section-tree route with the proven hybrid
+                # vector route. Either route may own the only copy of a file
+                # in a mixed chat, so both run and the results are merged.
+                from app.retrieval.structured import search_structured_documents
                 from app.retrieval.search import search_documents
                 from app.generation.generator import generate_answer
 
-                hits = search_documents(query_text, document_chat_id=active_chat_id)
+                hits = _merge_retrieval_hits(
+                    search_structured_documents(query_text, active_chat_id),
+                    search_documents(query_text, document_chat_id=active_chat_id),
+                )
                 results = []
                 for hit in hits:
                     payload = hit.get("payload", {}) if isinstance(hit, dict) else getattr(hit, "payload", {}) or {}

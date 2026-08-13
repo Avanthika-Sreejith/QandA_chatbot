@@ -17,3 +17,18 @@ create table if not exists public.chat_messages (
 
 create index if not exists chat_messages_chat_id_created_at_idx
     on public.chat_messages (chat_id, created_at);
+
+-- Persistent vectorless hierarchy for documents classified as structured.
+-- It is deliberately separate from the Qdrant vector collection.
+create table if not exists public.structured_document_indexes (
+    chat_id text not null references public.document_chats(id) on delete cascade,
+    file_path text not null,
+    file_name text not null,
+    structure_score integer not null,
+    tree jsonb not null,
+    created_at timestamptz not null default now(),
+    primary key (chat_id, file_path)
+);
+
+create index if not exists structured_document_indexes_chat_id_idx
+    on public.structured_document_indexes (chat_id);

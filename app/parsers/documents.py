@@ -438,6 +438,10 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                     # real, non-empty table chunk was produced.
                     if candidate_segments:
                         table_boxes.append(table_rect)
+                        # Remember where on the page each table sits so tables
+                        # can be re-merged with the prose in visual order below.
+                        for segment in candidate_segments:
+                            segment.metadata["sort_y"] = table_rect.y0
                         table_segments.extend(candidate_segments)
 
             # OCR images that are not covered by any detected native table, such
@@ -531,6 +535,7 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
 
             current_section = "Document body"
             pending: list[str] = []
+            pending_y: float | None = None
             page_segments: list[ParsedSegment] = []
 
             def flush() -> None:
@@ -540,7 +545,12 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                         ParsedSegment(
                             text,
                             _base_metadata(path)
-                            | {"source_type": "pdf", "page": index, "section": current_section},
+                            | {
+                                "source_type": "pdf",
+                                "page": index,
+                                "section": current_section,
+                                "sort_y": pending_y if pending_y is not None else 0.0,
+                            },
                         )
                     )
                 pending.clear()
@@ -556,6 +566,7 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                 is_bold = any(span.get("flags", 0) & 16 for span in line_spans)
                 if _looks_like_pdf_heading(text, max_size, is_bold, body_size):
                     flush()
+                    pending_y = None
                     current_section = text
                     page_segments.append(
                         ParsedSegment(
@@ -567,14 +578,27 @@ def parse_pdf(path: Path) -> list[ParsedSegment]:
                                 "page": index,
                                 "section": text,
                                 "is_heading": True,
+                                "sort_y": line.get("bbox", [0, 0, 0, 0])[1],
                             },
                         )
                     )
                 else:
+                    if not pending:
+                        pending_y = line.get("bbox", [0, 0, 0, 0])[1]
                     pending.append(text)
             flush()
-            segments.extend(table_segments)
-            segments.extend(page_segments)
+            # Tables and prose are collected separately above; merge them back
+            # into a single visual reading order so a table below its heading is
+            # labelled by that heading instead of the previous section.
+            page_units = [
+                (
+                    seg.metadata.get("sort_y") if isinstance(seg.metadata.get("sort_y"), (int, float)) else 0.0,
+                    seg,
+                )
+                for seg in [*page_segments, *table_segments]
+            ]
+            page_units.sort(key=lambda item: item[0])
+            segments.extend(seg for _, seg in page_units)
     return segments
 
 

@@ -23,11 +23,11 @@ passage merely because it discusses the same topic: every cited definition, form
 or claim must appear in that exact numbered passage.
 
 If the question asks for key concepts, definitions, terms, formulas, or a list, give
-the specific labels and definitions from the relevant passage. Do not replace them
-with broad topic summaries, general rules, or a later revision summary when a direct
-definition/list passage is available. If the direct passage contains five labelled
-definitions, answer with those five definitions only; do not add related concepts
-that are absent from that list.
+exactly the items labelled in the passage that defines them (for example a section
+titled "Key concepts"). Match that list one-to-one: one bullet per labelled item, in
+the same order, with nothing added and nothing dropped. Never pad the list with rules,
+steps, formulas, or revision-summary bullets from other passages, even when those
+passages are about the same topic and appear in the context.
 
 At the very end of your answer, on its own line, report exactly which context passage
 numbers you used, in this exact format:
